@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>顔の表情の見え方に関する調査</title>
+<style>
+:root{
+  --bg:#f3f3f1; --card:#ffffff; --ink:#1f1f1f; --sub:#5b5b58; --line:#d6d6d2;
+  --accent:#1f4e79; --accent-ink:#ffffff; --stage:#ececea; --warn:#9b2c2c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Meiryo",system-ui,sans-serif;font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+.page{max-width:760px;margin:0 auto;padding:32px 16px 48px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:28px 32px}
+@media (max-width:600px){.card{padding:20px 18px}}
+h1{font-size:22px;margin:0 0 16px;line-height:1.4}
+h2{font-size:17px;margin:20px 0 8px}
+p{margin:0 0 12px}
+.note{color:var(--sub);font-size:14px}
+.warn{color:var(--warn)}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:20px}
+.btn{appearance:none;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:600;padding:10px 24px;border-radius:8px;cursor:pointer}
+.btn[disabled]{opacity:.4;cursor:default}
+.btn.secondary{background:#fff;color:var(--accent)}
+.link{background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+label.check{display:flex;gap:10px;align-items:flex-start;margin:18px 0 0;cursor:pointer}
+label.check input{margin-top:7px;width:18px;height:18px}
+.field{margin:16px 0 0}
+.field>span{display:block;font-weight:600;margin-bottom:6px}
+input[type=text],input[type=number],textarea,select{font:inherit;padding:8px 10px;border:1px solid #bdbdb8;border-radius:6px;background:#fff;color:var(--ink)}
+input[type=text]{width:100%;max-width:420px}
+input[type=number]{width:120px}
+textarea{width:100%;min-height:90px}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opts label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.code{font-family:ui-monospace,"Consolas","Menlo",monospace;font-size:26px;font-weight:700;letter-spacing:.06em;background:#f6f6f3;border:1px dashed #9a9a96;border-radius:8px;padding:12px 18px;display:inline-block;user-select:all}
+.meter{height:6px;background:#e3e3df;border-radius:3px;overflow:hidden;margin:8px 0 4px}
+.meter>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+/* 画面較正 */
+.calib{display:flex;flex-direction:column;align-items:center;gap:14px;margin:18px 0 6px}
+.cardshape{border:2px solid var(--accent);border-radius:12px;background:repeating-linear-gradient(45deg,#eef3f8,#eef3f8 8px,#e3ebf3 8px,#e3ebf3 16px)}
+.calib input[type=range]{width:min(520px,100%);accent-color:var(--accent)}
+/* 試行画面 */
+.trial{position:fixed;inset:0;background:var(--stage);display:flex;flex-direction:column}
+.topbar{height:30px;flex:0 0 30px;display:flex;align-items:center;gap:12px;padding:0 16px;font-size:13px;color:var(--sub)}
+.bar{flex:1;height:4px;background:#d6d6d2;border-radius:2px;overflow:hidden;max-width:520px}
+.bar>i{display:block;height:100%;width:0;background:#7b7b77}
+.stagewrap{flex:1;display:flex;align-items:center;justify-content:center;gap:40px;padding:6px 24px 18px;min-height:0}
+.imgbox{position:relative;flex:0 0 auto;background:var(--stage)}
+.imgbox img,.imgbox canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.imgbox .fix{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:42px;line-height:1;color:#2b2b2b;font-weight:300}
+.imgbox .attn{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#fbfbf9;border:1px solid var(--line);font-size:18px;line-height:1.8}
+.imgbox .tag{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:12px;color:var(--warn)}
+.panel{width:300px;flex:0 0 300px;display:flex;flex-direction:column;gap:18px}
+.question{font-size:20px;font-weight:600;line-height:1.5;margin:0}
+.choices{display:flex;gap:14px}
+.choice{flex:1;appearance:none;background:#fff;border:2px solid #4a4a47;border-radius:10px;padding:14px 6px 10px;font:inherit;font-size:18px;font-weight:600;line-height:1.3;cursor:pointer;color:var(--ink)}
+.choice small{display:block;font-size:12px;font-weight:400;color:var(--sub);margin-top:4px}
+.choice:not([disabled]):hover{background:#f1f4f8}
+.choice[disabled]{opacity:.35;cursor:default}
+.hidden{visibility:hidden}
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<div id="app"><div class="page"><div class="card"><p>読み込み中です…</p><noscript><p class="warn">この調査には JavaScript が必要です。</p></noscript></div></div></div>
+<script>
+/* 違和感の閾値の測定（恒常法）── 回答画面
+ * 流れ：環境の確認 → 同意 → 画面較正 → 説明（画像の読み込み）→ 練習 → 本試行（ブロック間に休憩）
+ *       → 属性 → 送信（Apps Script）→ 完了コード。送信できないときは回答を CSV で保存させる。
+ * 設定は config.js（?config=<名前> で config.<名前>.js を重ねる）。
+ * URL パラメータ：pid（参加者ID）, config, demo（短縮版）, nocheck（端末の確認を省く）,
+ *                 seed（提示順の乱数の種）, order（yes_left / yes_right）, debug
+ */
+(function () {
+  'use strict';
+
+  var Q = new URLSearchParams(location.search);
+  var app = document.getElementById('app');
+  var AVATAR = { M: 'male', F: 'female' };
+  var COMBO_SHAPES = { smile: [1, 0, 0], eye: [1, 1, 0], lip: [1, 0, 1], both: [1, 1, 1] }; // 口角・目・上唇
+  var DEFAULT_PX_PER_MM = 96 / 25.4;
+  var CARD_MM = [85.6, 53.98];
+
+  var TRIAL_COLS = ['session_id', 'participant_id', 'experiment_id', 'mode', 'trial_index', 'phase', 'block',
+    'block_trial', 'stimulus_id', 'avatar', 'combo', 'level', 'smile', 'eye', 'lip', 'image_loaded', 'response',
+    'response_label', 'correct', 'key', 'rt_ms', 'display_mm', 'shrunk', 't_onset_ms'];
+  var SESSION_COLS = ['session_id', 'participant_id', 'experiment_id', 'config_name', 'version', 'mode', 'seed',
+    'button_order', 'started_at', 'finished_at', 'duration_s', 'completion_code', 'n_trials_main', 'n_practice',
+    'attention_n', 'attention_correct', 'attention_pass', 'images_loaded', 'n_images_failed', 'calibration_method',
+    'px_per_mm', 'stimulus_width_mm', 'display_mm_min', 'display_mm_max', 'n_shrunk', 'break_s', 'window_w',
+    'window_h', 'screen_w', 'screen_h', 'dpr', 'user_agent', 'language', 'age', 'sex', 'vr_experience',
+    'free_comment', 'submit_attempts'];
+
+  var cfg = null;
+  var S = {
+    sessionId: null, pid: '', configName: 'default', mode: Q.has('demo') ? 'demo' : 'main',
+    seed: null, rnd: null, buttonOrder: null, startedAt: null, t0: 0,
+    pxPerMm: DEFAULT_PX_PER_MM, calibrationMethod: 'default', aspect: null,
+    cache: {}, trials: [], demographics: {}, breakMs: 0, submitAttempts: 0
+  };
+  if (Q.has('debug')) window.__SURVEY__ = S;
+
+  /* ---------------------------------------------------------------- 小道具 */
+  function h(tag, attrs) {
+    var e = document.createElement(tag), k, i, c;
+    attrs = attrs || {};
+    for (k in attrs) {
+      if (!Object.prototype.hasOwnProperty.call(attrs, k)) continue;
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'html') e.innerHTML = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] === true) e.setAttribute(k, '');
+      else if (attrs[k] !== false && attrs[k] != null) e.setAttribute(k, attrs[k]);
+    }
+    addKids(e, Array.prototype.slice.call(arguments, 2));
+    return e;
+  }
+  function addKids(parent, list) {   // 入れ子の配列も平らにして追加する。null / false は飛ばす
+    list.forEach(function (c) {
+      if (c == null || c === false) return;
+      if (Array.isArray(c)) addKids(parent, c);
+      else parent.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+  }
+  function show(node) { app.textContent = ''; app.appendChild(node); window.scrollTo(0, 0); }
+  function page() { var card = h('div', { class: 'card' }); addKids(card, Array.prototype.slice.call(arguments)); return h('div', { class: 'page' }, card); }
+  function paras(list) { return (list || []).map(function (t) { return h('p', { text: t }); }); }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function frames(n) { return new Promise(function (r) { var k = 0; function f() { if (++k >= n) r(); else requestAnimationFrame(f); } requestAnimationFrame(f); }); }
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function merge(a, b) {
+    var out = {}, k;
+    for (k in a) out[k] = a[k];
+    for (k in b) out[k] = (isObj(a[k]) && isObj(b[k])) ? merge(a[k], b[k]) : b[k];
+    return out;
+  }
+  function fnv1a(str) {
+    var bytes = new TextEncoder().encode(str), h1 = 0x811c9dc5, i;
+    for (i = 0; i < bytes.length; i++) { h1 ^= bytes[i]; h1 = Math.imul(h1, 0x01000193) >>> 0; }
+    return ('00000000' + h1.toString(16)).slice(-8);
+  }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function shuffle(arr, rnd) {
+    var a = arr.slice(), i, j, t;
+    for (i = a.length - 1; i > 0; i--) { j = Math.floor(rnd() * (i + 1)); t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function randHex(n) {
+    var b = new Uint8Array(n);
+    (window.crypto || window.msCrypto).getRandomValues(b);
+    return Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+  }
+  function round(x, d) { var m = Math.pow(10, d); return Math.round(x * m) / m; }
+  function stimInfo(id) {
+    var m = /^([MF])_(smile|eye|lip|both)_(\d{3})$/.exec(id);
+    if (!m) return null;
+    var lv = parseInt(m[3], 10) / 100, w = COMBO_SHAPES[m[2]];
+    return { id: id, avatar: AVATAR[m[1]], combo: m[2], level: lv, smile: lv * w[0], eye: lv * w[1], lip: lv * w[2] };
+  }
+  function idOf(tag, combo, lv) { return tag + '_' + combo + '_' + ('00' + Math.round(lv * 100)).slice(-3); }
+  function completionCode() { return cfg.completionCodePrefix + fnv1a(S.pid + '|' + cfg.completionCodeSalt).toUpperCase(); }
+  function guard(e) { e.preventDefault(); e.returnValue = ''; return ''; }
+  function protect(on) { if (on) window.addEventListener('beforeunload', guard); else window.removeEventListener('beforeunload', guard); }
+
+  /* ---------------------------------------------------------------- 設定 */
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = resolve; s.onerror = function () { reject(new Error(src)); };
+      document.head.appendChild(s);
+    });
+  }
+  function loadConfig() {
+    if (!window.SURVEY_CONFIG) return Promise.reject(new Error('config.js を読み込めませんでした。'));
+    var name = Q.get('config');
+    if (!name) return Promise.resolve(window.SURVEY_CONFIG);
+    if (!/^[a-z0-9_]+$/.test(name)) return Promise.reject(new Error('config の名前が不正です：' + name));
+    S.configName = name;
+    return loadScript('config.' + name + '.js?v=' + encodeURIComponent(window.SURVEY_CONFIG.version || ''))
+      .then(function () {
+        if (!window.SURVEY_CONFIG_OVERLAY) throw new Error('config.' + name + '.js に SURVEY_CONFIG_OVERLAY がありません。');
+        return merge(window.SURVEY_CONFIG, window.SURVEY_CONFIG_OVERLAY);
+      });
+  }
+
+  /* ---------------------------------------------------------------- 提示順 */
+  function buildSchedule() {
+    var d = cfg.design, main = [], blocks = [], b, r, list, pos, checks, k;
+    d.avatars.forEach(function (tag) {
+      d.combos.forEach(function (combo) {
+        d.levels.forEach(function (lv) { main.push(idOf(tag, combo, lv)); });
+      });
+    });
+    var reps = d.repetitions;
+    var att = (cfg.attentionChecks || []).slice();
+    if (S.mode === 'demo') { main = shuffle(main, S.rnd).slice(0, 6); reps = 1; att = att.slice(0, 1); }
+    for (r = 0; r < reps; r++) {
+      list = shuffle(main, S.rnd);
+      if (blocks.length && list.length > 1 && list[0] === blocks[r - 1][blocks[r - 1].length - 1].id) {
+        var t0 = list[0]; list[0] = list[1]; list[1] = t0;
+      }
+      blocks.push(list.map(function (id) { return { kind: 'main', id: id }; }));
+    }
+    // 確認問題：ブロックに順に割り当て、ブロック内では attentionWindow の範囲に等間隔の区間を作って1問ずつ置く
+    var perBlock = blocks.map(function () { return []; });
+    att.forEach(function (a, i) { perBlock[i % blocks.length].push(a); });
+    var win = cfg.attentionWindow || [0.3, 0.7];
+    perBlock.forEach(function (as, bi) {
+      var n = blocks[bi].length, m = as.length, inserted = 0;
+      as.forEach(function (a, j) {
+        var lo = win[0] + (win[1] - win[0]) * j / m, hi = win[0] + (win[1] - win[0]) * (j + 1) / m;
+        pos = Math.floor(n * (lo + (hi - lo) * S.rnd())) + inserted;
+        pos = Math.max(1, Math.min(blocks[bi].length - 1, pos));
+        blocks[bi].splice(pos, 0, { kind: 'attention', id: a.id, text: a.text, correct: a.correct });
+        inserted++;
+      });
+    });
+    var practice = (cfg.practice || []).map(function (id) { return { kind: 'practice', id: id }; });
+    if (S.mode === 'demo') practice = practice.slice(0, 1);
+    return { practice: practice, blocks: blocks, imageIds: practice.map(function (t) { return t.id; }).concat(main) };
+  }
+
+  /* ---------------------------------------------------------------- 画像 */
+  function preload(ids, onProgress) {
+    var total = ids.length, done = 0, idx = 0, active = 0;
+    return new Promise(function (resolve) {
+      if (!total) { resolve(); return; }
+      function next() {
+        while (active < 6 && idx < total) {
+          (function (id) {
+            var img = new Image();
+            active++;
+            img.onload = function () {
+              S.cache[id] = { ok: true, img: img };
+              if (!S.aspect && img.naturalWidth) S.aspect = img.naturalHeight / img.naturalWidth;
+              fin();
+            };
+            img.onerror = function () { S.cache[id] = { ok: false }; fin(); };
+            img.src = cfg.imageDir + id + cfg.imageExt;
+          })(ids[idx++]);
+        }
+      }
+      function fin() { active--; done++; onProgress(done, total); if (done === total) resolve(); else next(); }
+      next();
+    });
+  }
+  function drawFallback(canvas, info) {
+    var W = canvas.width = 500, H = canvas.height = Math.round(500 * (cfg.stimulusAspect || 1.25));
+    var c = canvas.getContext('2d'), sx, cx, cy, ry, mw, my, lift;
+    c.fillStyle = '#e9e7e2'; c.fillRect(0, 0, W, H);
+    c.lineWidth = 6; c.strokeStyle = '#3a3a38'; c.fillStyle = '#f4dfcd';
+    c.beginPath(); c.ellipse(W / 2, H * 0.47, W * 0.33, H * 0.33, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+    for (sx = -1; sx <= 1; sx += 2) {
+      cx = W / 2 + sx * W * 0.13; cy = H * 0.41; ry = Math.max(H * 0.006, H * 0.03 * (1 - 0.7 * info.eye));
+      c.beginPath(); c.ellipse(cx, cy, W * 0.06, ry, 0, 0, Math.PI * 2); c.stroke();
+    }
+    my = H * 0.6; mw = W * 0.15 * (1 + 0.25 * info.smile); lift = H * 0.045 * info.smile;
+    c.beginPath(); c.moveTo(W / 2 - mw, my - lift); c.quadraticCurveTo(W / 2, my + H * 0.04 * info.smile, W / 2 + mw, my - lift); c.stroke();
+    if (info.lip > 0) {
+      c.beginPath(); c.moveTo(W / 2 - mw * 0.85, my - lift * 0.9);
+      c.quadraticCurveTo(W / 2, my - H * 0.03 * info.lip, W / 2 + mw * 0.85, my - lift * 0.9); c.stroke();
+    }
+    c.fillStyle = '#9b2c2c'; c.font = '22px sans-serif'; c.textAlign = 'center';
+    c.fillText('画像未配置（代替表示）' + info.id, W / 2, H * 0.94);
+  }
+
+  /* ---------------------------------------------------------------- 画面：試行 */
+  var T = null; // 試行画面の部品
+  function trialScreen() {
+    if (T) return T;
+    var left = S.buttonOrder === 'yes_left';
+    var yes = { value: 1, label: cfg.question.yesLabel }, no = { value: 0, label: cfg.question.noLabel };
+    var L = left ? yes : no, R = left ? no : yes;
+    T = {};
+    T.progressText = h('span');
+    T.barFill = h('i');
+    T.img = h('img', { alt: '' });
+    T.canvas = h('canvas');
+    T.fix = h('div', { class: 'fix', text: '+' });
+    T.attn = h('div', { class: 'attn' });
+    T.tag = h('div', { class: 'tag' });
+    T.box = h('div', { class: 'imgbox' }, T.img, T.canvas, T.attn, T.fix, T.tag);
+    T.btnL = h('button', { class: 'choice', type: 'button', disabled: true }, L.label, h('small', { text: 'F キー' }));
+    T.btnR = h('button', { class: 'choice', type: 'button', disabled: true }, R.label, h('small', { text: 'J キー' }));
+    T.valL = L; T.valR = R;
+    T.root = h('div', { class: 'trial' },
+      h('div', { class: 'topbar' }, T.progressText, h('div', { class: 'bar' }, T.barFill)),
+      h('div', { class: 'stagewrap' }, T.box,
+        h('div', { class: 'panel' }, h('p', { class: 'question', text: cfg.question.text }), h('div', { class: 'choices' }, T.btnL, T.btnR))));
+    return T;
+  }
+  function setVisible(part) {
+    T.img.style.display = part === 'img' ? 'block' : 'none';
+    T.canvas.style.display = part === 'canvas' ? 'block' : 'none';
+    T.attn.style.display = part === 'attn' ? 'flex' : 'none';
+    T.fix.style.display = part === 'fix' ? 'flex' : 'none';
+    T.tag.textContent = '';
+  }
+  function displaySize() {
+    var aspect = S.aspect || cfg.stimulusAspect || 1.25;
+    var w = cfg.stimulusWidthMm * S.pxPerMm, hh = w * aspect;
+    var availH = window.innerHeight - 30 - 24 - 8;
+    var availW = window.innerWidth - 300 - 40 - 48 - 8;
+    var s = Math.min(1, availH / hh, availW / w);
+    w = Math.floor(w * s); hh = Math.floor(hh * s);
+    return { w: w, h: hh, mm: w / S.pxPerMm, shrunk: s < 1 };
+  }
+  function waitResponse() {
+    return new Promise(function (resolve) {
+      function done(val, key) {
+        T.btnL.onclick = T.btnR.onclick = null;
+        document.removeEventListener('keydown', onKey);
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // スペースキーでの誤回答を防ぐ
+        resolve({ value: val.value, label: val.label, key: key, t: performance.now() });
+      }
+      function onKey(e) {
+        if (e.repeat) return;
+        var k = (e.key || '').toLowerCase();
+        if (k === 'f') { e.preventDefault(); done(T.valL, 'F'); }
+        else if (k === 'j') { e.preventDefault(); done(T.valR, 'J'); }
+      }
+      T.btnL.onclick = function () { done(T.valL, 'click_left'); };
+      T.btnR.onclick = function () { done(T.valR, 'click_right'); };
+      document.addEventListener('keydown', onKey);
+    });
+  }
+  function enable(on) { T.btnL.disabled = T.btnR.disabled = !on; }
+
+  async function runTrial(t, meta) {
+    var tm = cfg.timing, size, onset, r, loaded = null, info = t.kind === 'attention' ? null : stimInfo(t.id);
+    if (window.__SURVEY__) S.current = t; // 動作確認（?debug）用
+    enable(false);
+    T.progressText.textContent = meta.label;
+    T.barFill.style.width = Math.round(meta.frac * 100) + '%';
+    size = displaySize();
+    T.box.style.width = size.w + 'px'; T.box.style.height = size.h + 'px';
+    setVisible('none');
+    await sleep(tm.itiMs);
+    setVisible('fix');
+    await sleep(tm.fixationMs);
+    if (t.kind === 'attention') {
+      T.attn.textContent = t.text;
+      setVisible('attn');
+    } else {
+      var c = S.cache[t.id];
+      if (c && c.ok) {
+        T.img.src = c.img.src;
+        try { await T.img.decode(); } catch (e) { /* 表示はされる */ }
+        setVisible('img'); loaded = true;
+      } else {
+        drawFallback(T.canvas, info || { id: t.id, smile: 0, eye: 0, lip: 0 });
+        setVisible('canvas'); loaded = false;
+      }
+    }
+    await frames(2);
+    onset = performance.now();
+    await sleep(tm.minViewMs);
+    enable(true);
+    r = await waitResponse();
+    enable(false);
+    return {
+      session_id: S.sessionId, participant_id: S.pid, experiment_id: cfg.experimentId, mode: S.mode,
+      trial_index: S.trials.length, phase: t.kind, block: meta.block, block_trial: meta.blockTrial,
+      stimulus_id: t.id, avatar: info ? info.avatar : '', combo: info ? info.combo : '',
+      level: info ? info.level : '', smile: info ? round(info.smile, 2) : '', eye: info ? round(info.eye, 2) : '',
+      lip: info ? round(info.lip, 2) : '', image_loaded: loaded === null ? '' : (loaded ? 1 : 0),
+      response: r.value, response_label: r.label, correct: t.kind === 'attention' ? (r.value === t.correct ? 1 : 0) : '',
+      key: r.key, rt_ms: Math.round(r.t - onset), display_mm: round(size.mm, 1), shrunk: size.shrunk ? 1 : 0,
+      t_onset_ms: Math.round(onset - S.t0)
+    };
+  }
+
+  /* ---------------------------------------------------------------- 画面：説明など */
+  function screenBlocked(msg) {
+    show(page(h('h1', { text: cfg ? cfg.title : '調査' }), h('p', { class: 'warn', text: msg })));
+  }
+
+  function screenConsent() {
+    return new Promise(function (resolve) {
+      var c = cfg.consent, needPid = !S.pid;
+      var pidInput = needPid ? h('input', { type: 'text', autocomplete: 'off', maxlength: '64', spellcheck: 'false' }) : null;
+      var box = h('input', { type: 'checkbox' });
+      var go = h('button', { class: 'btn', type: 'button', disabled: true, text: '次へ' });
+      function check() { go.disabled = !(box.checked && (!needPid || pidInput.value.trim())); }
+      box.addEventListener('change', check);
+      if (pidInput) pidInput.addEventListener('input', check);
+      go.addEventListener('click', function () { if (needPid) S.pid = pidInput.value.trim(); resolve(); });
+      show(page(h('h1', { text: c.heading }), paras(c.body),
+        needPid ? h('label', { class: 'field' }, h('span', { text: c.pidLabel }), pidInput) : null,
+        h('label', { class: 'check' }, box, h('span', { text: c.checkboxLabel })),
+        h('div', { class: 'row' }, go)));
+    });
+  }
+
+  function screenCalibration() {
+    return new Promise(function (resolve) {
+      var w0 = Math.round(CARD_MM[0] * DEFAULT_PX_PER_MM), w = w0;
+      var shape = h('div', { class: 'cardshape' });
+      var slider = h('input', { type: 'range', min: '120', max: '700', step: '1', value: String(w0), 'aria-label': '四角形の大きさ' });
+      function draw() {
+        shape.style.width = w + 'px';
+        shape.style.height = Math.round(w * CARD_MM[1] / CARD_MM[0]) + 'px';
+      }
+      slider.addEventListener('input', function () { w = +slider.value; draw(); });
+      function nudge(d) { w = Math.max(120, Math.min(700, w + d)); slider.value = String(w); draw(); }
+      var done = h('button', { class: 'btn', type: 'button', text: '大きさを合わせた' });
+      done.addEventListener('click', function () { S.pxPerMm = w / CARD_MM[0]; S.calibrationMethod = 'card'; resolve(); });
+      var skip = h('button', { class: 'link', type: 'button', text: 'カードが手元にない場合はこちら' });
+      skip.addEventListener('click', function () { S.pxPerMm = DEFAULT_PX_PER_MM; S.calibrationMethod = 'default'; resolve(); });
+      draw();
+      var small = window.innerHeight < 600 || window.innerWidth < 1000;
+      show(page(h('h1', { text: '画面の大きさの調整' }),
+        h('p', { text: '顔の画像を、どの画面でも同じ大きさで表示するための調整です。' }),
+        h('p', { text: 'クレジットカードやポイントカードなど、一般的な大きさのカードを画面の四角形に重ね、四角形がカードと同じ大きさになるまでスライダーを動かしてください。' }),
+        small ? h('p', { class: 'warn', text: 'ブラウザのウィンドウが小さいようです。ウィンドウを最大化してからお進みください。' }) : null,
+        h('div', { class: 'calib' }, shape, slider,
+          h('div', { class: 'row', style: 'margin-top:0' },
+            h('button', { class: 'btn secondary', type: 'button', text: '小さく', onclick: function () { nudge(-2); } }),
+            h('button', { class: 'btn secondary', type: 'button', text: '大きく', onclick: function () { nudge(2); } }))),
+        h('div', { class: 'row' }, done, skip)));
+    });
+  }
+
+  function screenInstructions(sched) {
+    return new Promise(function (resolve) {
+      var meter = h('i'), status = h('p', { class: 'note', text: '画像を読み込んでいます…' });
+      var go = h('button', { class: 'btn', type: 'button', disabled: true, text: '練習を始める' });
+      var ids = sched.imageIds.filter(function (id, i, a) { return a.indexOf(id) === i; });
+      var timer = setTimeout(function () { go.disabled = false; status.textContent = '一部の画像の読み込みに時間がかかっています。このままお進みいただけます。'; }, 60000);
+      preload(ids, function (d, n) { meter.style.width = Math.round(100 * d / n) + '%'; }).then(function () {
+        clearTimeout(timer);
+        var failed = ids.filter(function (id) { return !S.cache[id] || !S.cache[id].ok; }).length;
+        status.textContent = failed ? ('読み込み完了（' + failed + ' 枚は代替表示になります）') : '読み込み完了';
+        go.disabled = false;
+      });
+      go.addEventListener('click', function () { clearTimeout(timer); resolve(); });
+      show(page(h('h1', { text: cfg.instructions.heading }), paras(cfg.instructions.body),
+        h('div', { class: 'meter' }, meter), status, h('div', { class: 'row' }, go)));
+    });
+  }
+
+  function screenMessage(title, lines, label) {
+    return new Promise(function (resolve) {
+      var go = h('button', { class: 'btn', type: 'button', text: label || '続ける' });
+      go.addEventListener('click', resolve);
+      show(page(h('h1', { text: title }), paras(lines), h('div', { class: 'row' }, go)));
+      go.focus();
+    });
+  }
+
+  function screenDemographics() {
+    return new Promise(function (resolve) {
+      var inputs = {}, go = h('button', { class: 'btn', type: 'button', text: '回答を送信する' }), msg = h('p', { class: 'warn' });
+      var fields = cfg.demographics.map(function (q) {
+        var body;
+        if (q.type === 'number') {
+          body = inputs[q.id] = h('input', { type: 'number', min: String(q.min), max: String(q.max), step: '1', inputmode: 'numeric' });
+        } else if (q.type === 'choice') {
+          body = h('div', { class: 'opts' }, q.options.map(function (o) {
+            return h('label', null, h('input', { type: 'radio', name: q.id, value: o }), h('span', { text: o }));
+          }));
+          inputs[q.id] = body;
+        } else {
+          body = inputs[q.id] = h('textarea', { maxlength: '1000' });
+        }
+        return h('div', { class: 'field' }, h('span', { text: q.text }), body);
+      });
+      go.addEventListener('click', function () {
+        var out = {}, bad = [];
+        cfg.demographics.forEach(function (q) {
+          var v;
+          if (q.type === 'number') {
+            v = inputs[q.id].value.trim();
+            if (v === '' || isNaN(+v) || +v < q.min || +v > q.max || Math.round(+v) !== +v) bad.push(q.text); else v = +v;
+          } else if (q.type === 'choice') {
+            var sel = inputs[q.id].querySelector('input:checked');
+            v = sel ? sel.value : '';
+            if (!v && !q.optional) bad.push(q.text);
+          } else {
+            v = inputs[q.id].value.trim();
+            if (!v && !q.optional) bad.push(q.text);
+          }
+          out[q.id] = v;
+        });
+        if (bad.length) { msg.textContent = '未回答または範囲外の項目があります：' + bad.join(' / '); return; }
+        S.demographics = out; resolve();
+      });
+      show(page(h('h1', { text: '最後に、あなたご自身について' }), fields, msg, h('div', { class: 'row' }, go)));
+    });
+  }
+
+  /* ---------------------------------------------------------------- 送信 */
+  function sessionRecord() {
+    var main = S.trials.filter(function (t) { return t.phase === 'main'; });
+    var att = S.trials.filter(function (t) { return t.phase === 'attention'; });
+    var shown = S.trials.filter(function (t) { return t.phase !== 'attention'; });
+    var mm = shown.map(function (t) { return t.display_mm; });
+    var failed = Object.keys(S.cache).filter(function (k) { return !S.cache[k].ok; }).length;
+    var attCorrect = att.filter(function (t) { return t.correct === 1; }).length;
+    var rec = {
+      session_id: S.sessionId, participant_id: S.pid, experiment_id: cfg.experimentId, config_name: S.configName,
+      version: cfg.version, mode: S.mode, seed: S.seed, button_order: S.buttonOrder,
+      started_at: S.startedAt, finished_at: new Date().toISOString(),
+      duration_s: Math.round((performance.now() - S.t0) / 1000), completion_code: completionCode(),
+      n_trials_main: main.length, n_practice: S.trials.filter(function (t) { return t.phase === 'practice'; }).length,
+      attention_n: att.length, attention_correct: attCorrect, attention_pass: att.length && attCorrect === att.length ? 1 : 0,
+      images_loaded: shown.every(function (t) { return t.image_loaded === 1; }) ? 1 : 0, n_images_failed: failed,
+      calibration_method: S.calibrationMethod, px_per_mm: round(S.pxPerMm, 4), stimulus_width_mm: cfg.stimulusWidthMm,
+      display_mm_min: mm.length ? Math.min.apply(null, mm) : '', display_mm_max: mm.length ? Math.max.apply(null, mm) : '',
+      n_shrunk: shown.filter(function (t) { return t.shrunk === 1; }).length, break_s: Math.round(S.breakMs / 1000),
+      window_w: window.innerWidth, window_h: window.innerHeight, screen_w: screen.width, screen_h: screen.height,
+      dpr: window.devicePixelRatio || 1, user_agent: navigator.userAgent, language: navigator.language || '',
+      submit_attempts: S.submitAttempts
+    };
+    cfg.demographics.forEach(function (q) { rec[q.id] = S.demographics[q.id] == null ? '' : S.demographics[q.id]; });
+    return rec;
+  }
+
+  async function submit(payload) {
+    if (!cfg.submitUrl) return false;
+    var body = JSON.stringify(payload), i, res, j;
+    for (i = 1; i <= 3; i++) {
+      S.submitAttempts = i;
+      try {
+        res = await fetch(cfg.submitUrl, { method: 'POST', body: body, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' });
+        j = await res.json();
+        if (j && j.ok) return true;
+      } catch (e) { /* 次の手へ */ }
+      await sleep(1500 * i);
+    }
+    // 応答が読めない環境向け：no-cors で送り、保存されたかを問い合わせる
+    try {
+      await fetch(cfg.submitUrl, { method: 'POST', mode: 'no-cors', body: body, headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+      await sleep(1500);
+      res = await fetch(cfg.submitUrl + (cfg.submitUrl.indexOf('?') < 0 ? '?' : '&') + 'check=' + encodeURIComponent(S.sessionId));
+      j = await res.json();
+      if (j && j.found) return true;
+    } catch (e) { /* CSV に切り替える */ }
+    return false;
+  }
+
+  function toCSV(rows, cols) {
+    function esc(v) { if (v == null) return ''; var s = String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+    return [cols.join(',')].concat(rows.map(function (r) { return cols.map(function (c) { return esc(r[c]); }).join(','); })).join('\r\n');
+  }
+  function downloadCSV(session) {
+    var cols = TRIAL_COLS.concat(SESSION_COLS.filter(function (c) { return TRIAL_COLS.indexOf(c) < 0; }));
+    var rows = S.trials.map(function (t) { return merge(session, t); });
+    var blob = new Blob(['﻿' + toCSV(rows, cols)], { type: 'text/csv;charset=utf-8' });
+    var a = h('a', { href: URL.createObjectURL(blob), download: cfg.experimentId + '_' + S.pid.replace(/[^A-Za-z0-9_-]/g, '_') + '_' + S.sessionId + '.csv' });
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function screenDone(session, saved) {
+    protect(!saved);
+    var code = h('div', { class: 'code', text: session.completion_code });
+    var parts = [h('h1', { text: 'ご協力ありがとうございました' })];
+    if (saved) {
+      parts.push(h('p', { text: '回答を受け付けました。次の完了コードを、募集ページの入力欄にご記入ください。' }), code);
+      if (S.mode === 'demo') parts.push(h('p', { class: 'note', text: '（短縮版の動作確認です。本番の回答としては扱いません。）' }));
+    } else {
+      var dl = h('button', { class: 'btn', type: 'button', text: '回答ファイルを保存する' });
+      dl.addEventListener('click', function () { downloadCSV(session); protect(false); });
+      parts.push(
+        h('p', { text: cfg.submitUrl ? '回答を自動で送信できませんでした。お手数ですが、下のボタンで回答ファイルを保存し、募集ページの指示に従ってご提出ください。' : '下のボタンで回答ファイルを保存し、指示に従ってご提出ください。' }),
+        h('div', { class: 'row' }, dl),
+        h('p', { style: 'margin-top:20px', text: '完了コード：' }), code);
+    }
+    show(page.apply(null, parts));
+  }
+
+  /* ---------------------------------------------------------------- 本体 */
+  async function main() {
+    try { cfg = await loadConfig(); } catch (e) { screenBlocked(e.message); return; }
+    document.title = cfg.title;
+    var mobile = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent) ||
+      (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) || Math.min(screen.width, screen.height) < 600;
+    if (cfg.requireDesktop && mobile && !Q.has('nocheck')) {
+      screenBlocked('この調査は、パソコン（ノートパソコンを含む）でのみご回答いただけます。お手数ですが、パソコンのブラウザで開き直してください。');
+      return;
+    }
+    S.pid = (Q.get('pid') || '').trim().slice(0, 64);
+    S.sessionId = 's' + Date.now().toString(36) + '-' + randHex(4);
+    S.seed = Q.has('seed') ? (parseInt(Q.get('seed'), 10) >>> 0) : (parseInt(randHex(4), 16) >>> 0);
+    S.rnd = mulberry32(S.seed);
+
+    await screenConsent();
+    S.startedAt = new Date().toISOString();
+    S.t0 = performance.now();
+    var ord = Q.get('order');
+    S.buttonOrder = (ord === 'yes_left' || ord === 'yes_right') ? ord
+      : (parseInt(fnv1a('order|' + S.pid).charAt(0), 16) < 8 ? 'yes_left' : 'yes_right'); // 参加者IDで左右を振り分け（上位ビットを使う）
+    protect(true);
+
+    await screenCalibration();
+    var sched = buildSchedule();
+    await screenInstructions(sched);
+
+    var tr = trialScreen(), i, b, total;
+    show(tr.root);
+    for (i = 0; i < sched.practice.length; i++) {
+      S.trials.push(await runTrial(sched.practice[i], { label: '練習 ' + (i + 1) + ' / ' + sched.practice.length, frac: (i + 1) / sched.practice.length, block: 0, blockTrial: i + 1 }));
+    }
+    await screenMessage('練習が終わりました', ['ここから本番です。練習と同じように、見たままの印象でお答えください。'], '本番を始める');
+
+    total = sched.blocks.reduce(function (n, bl) { return n + bl.length; }, 0);
+    var k = 0;
+    for (b = 0; b < sched.blocks.length; b++) {
+      if (b > 0) {
+        var t1 = performance.now();
+        await screenMessage('休憩', [cfg.breakText]);
+        S.breakMs += performance.now() - t1;
+      }
+      show(tr.root);
+      for (i = 0; i < sched.blocks[b].length; i++) {
+        k++;
+        S.trials.push(await runTrial(sched.blocks[b][i], { label: k + ' / ' + total, frac: k / total, block: b + 1, blockTrial: i + 1 }));
+      }
+    }
+
+    await screenDemographics();
+    show(page(h('h1', { text: '送信しています…' }), h('p', { class: 'note', text: 'このままお待ちください。' })));
+    var session = sessionRecord();
+    var saved = await submit({ session: session, trials: S.trials });
+    session.submit_attempts = S.submitAttempts;
+    screenDone(session, saved);
+  }
+
+  main().catch(function (e) {
+    protect(false);
+    show(page(h('h1', { text: 'エラーが発生しました' }), h('p', { class: 'warn', text: String(e && e.message || e) }),
+      h('p', { class: 'note', text: 'お手数ですが、募集ページの連絡先までお知らせください。' })));
+    if (window.console) console.error(e);
+  });
+})();
+</script>
+</body>
+</html>

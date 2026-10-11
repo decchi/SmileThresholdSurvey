@@ -1,0 +1,8 @@
+# モデルと回答データは置かない（docs/ は公開される）
+*.vrm
+results/
+data/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
