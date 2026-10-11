@@ -2,15 +2,18 @@
 """違和感の閾値の実験（恒常法）の刺激画像を書き出す
 
     python render_threshold_stimuli.py <stimuli.csv> <出力先>
-    python render_threshold_stimuli.py <stimuli.csv> <出力先> --only M_smile_050,F_both_100
+    python render_threshold_stimuli.py <stimuli.csv> <出力先> --only=M_smile_050,F_both_100   # 一部だけ
     python render_threshold_stimuli.py <stimuli.csv> <出力先> --sheet   # 一覧だけ作り直す
 
 このファイルは、Box の「260903_静止画による笑顔評価/render/」に置いて実行する。
 同じフォルダの render_stimuli.py（HTTP 配信・CDP・モーフ名の読み出し・COLMAP・CAMERA）と
 render.html、../male.vrm と ../female.vrm をそのまま使う。構図・照明・画素数は実験1の刺激と同じ。
 
-例（リポジトリを C:\\dev\\SmileThresholdSurvey に置いた場合）
+例1（リポジトリの中身を 260903_静止画による笑顔評価 に置いた場合）
     cd "<Box>\\ミミックでラポール形成\\03_予備実験\\260903_静止画による笑顔評価\\render"
+    python render_threshold_stimuli.py ..\\stimuli\\stimuli.csv ..\\docs\\images
+
+例2（リポジトリを C:\\dev\\SmileThresholdSurvey に置いた場合）
     python render_threshold_stimuli.py C:\\dev\\SmileThresholdSurvey\\stimuli\\stimuli.csv C:\\dev\\SmileThresholdSurvey\\docs\\images
 
 出力
@@ -114,23 +117,44 @@ def contact_sheet(rows, out_dir, avatar, path):
 
 
 # ---------------------------------------------------------------- 本体
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    if len(args) != 2:
-        usage()
-    csv_path, out_dir = [os.path.abspath(a) for a in args]
-    rows = read_rows(csv_path)
-    only = None
-    for a in sys.argv[1:]:
+def parse_args(argv):
+    """位置引数2つ（刺激一覧・出力先）と、--only=ID,ID / --only ID,ID / --sheet を読む"""
+    pos, only, sheet, i = [], None, False, 0
+    while i < len(argv):
+        a = argv[i]
         if a.startswith('--only'):
-            only = set(a.split('=', 1)[1].split(',')) if '=' in a else None
+            if '=' in a:
+                only = a.split('=', 1)[1]
+            elif i + 1 < len(argv):
+                only = argv[i + 1]
+                i += 1
+        elif a == '--sheet':
+            sheet = True
+        elif a.startswith('--'):
+            sys.exit('知らないオプション: %s' % a)
+        else:
+            pos.append(a)
+        i += 1
+    if len(pos) != 2:
+        usage()
+    only = set(x.strip() for x in only.split(',') if x.strip()) if only else None
+    return pos[0], pos[1], only, sheet
+
+
+def main():
+    csv_arg, out_arg, only, sheet_only = parse_args(sys.argv[1:])
+    csv_path, out_dir = os.path.abspath(csv_arg), os.path.abspath(out_arg)
+    rows = read_rows(csv_path)
     if only:
+        unknown = only - {r['stimulus_id'] for r in rows}
+        if unknown:
+            sys.exit('刺激一覧に無い ID: %s' % ', '.join(sorted(unknown)))
         rows_to_render = [r for r in rows if r['stimulus_id'] in only]
     else:
         rows_to_render = rows
     print('刺激一覧: %d 件（書き出し %d 件） -> %s' % (len(rows), len(rows_to_render), out_dir))
 
-    if '--sheet' not in sys.argv:
+    if not sheet_only:
         from PIL import Image
         for p in rs.VRM_PATHS.values():
             if not os.path.exists(p):

@@ -41,6 +41,16 @@ copy <リポジトリ>\render\render_threshold_stimuli.py .
 python render_threshold_stimuli.py <リポジトリ>\stimuli\stimuli.csv <リポジトリ>\docs\images
 ```
 
+リポジトリの中身を「260903_静止画による笑顔評価」に直接置いている場合は、コピー不要で、相対パスで足りる。
+
+```powershell
+cd "<Box>\ミミックでラポール形成\03_予備実験\260903_静止画による笑顔評価\render"
+python render_threshold_stimuli.py ..\stimuli\stimuli.csv ..\docs\images
+```
+
+一部だけ作り直すときは `--only=M_smile_050,F_both_100`（`--only M_smile_050,F_both_100` も可）、
+確認用の一覧だけ作り直すときは `--sheet` を付ける。
+
 - 書き出し後、`render/閾値刺激一覧_M.png`・`_F.png`（行＝4通り、列＝強さ）で見え方を確認する
 - **画像には非可逆圧縮をかけない**（条件間の差が小さいため。スクリプトは可逆圧縮のみ）
 - 強さや組み合わせを変えるときは `stimuli/make_stimulus_list.py` を直して `stimuli.csv` を作り直す
