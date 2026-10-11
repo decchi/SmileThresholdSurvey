@@ -20,7 +20,8 @@ render.html、../male.vrm と ../female.vrm をそのまま使う。構図・照
     <出力先>/<stimulus_id>.png                 1枚ずつ（可逆圧縮。非可逆圧縮はかけない）
     render/閾値刺激一覧_M.png, 閾値刺激一覧_F.png  確認用の一覧（行＝4通り、列＝強さ）
 """
-import sys, os, io, csv, json, time, base64, urllib.request
+import sys, os, io, csv, json, time, base64, socket, struct, shutil, subprocess, tempfile
+import urllib.request, urllib.parse
 
 import render_stimuli as rs
 
@@ -52,6 +53,181 @@ def shapes_of(r):
 
 
 # ---------------------------------------------------------------- CDP
+# Chrome の操作は paper-research スキルの cdp.py を使う（実験1と同じ）。見つからないときは、
+# 下の内蔵の簡易版で Chrome を起動して操作する。環境変数：
+#   CDP_PY       cdp.py の場所（既定の場所に無いとき）
+#   CDP_CHROME   Chrome（または Edge）の実行ファイル。既定は標準のインストール先を探す
+#   CDP_PORT     内蔵版のデバッグ用ポート（既定 9222）
+#   CDP_HEADLESS 1 にすると内蔵版はウィンドウを出さずに描画する
+#   CDP_CHROME_ARGS 内蔵版で Chrome に足す起動オプション（空白区切り。通常は不要）
+def find_cdp_py():
+    cands = [os.environ.get('CDP_PY'), rs.CDP]
+    for base in [os.path.join(os.path.expanduser('~'), '.claude', d) for d in ('skills', 'plugins')]:
+        for root, _dirs, files in os.walk(base):
+            if 'cdp.py' in files:
+                cands.append(os.path.join(root, 'cdp.py'))
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    return None
+
+
+def find_browser():
+    cands = [os.environ.get('CDP_CHROME')]
+    for env, default in [('PROGRAMFILES', r'C:\Program Files'), ('PROGRAMFILES(X86)', r'C:\Program Files (x86)'),
+                         ('LOCALAPPDATA', '')]:
+        base = os.environ.get(env, default)
+        if base:
+            cands.append(os.path.join(base, 'Google', 'Chrome', 'Application', 'chrome.exe'))
+    for env, default in [('PROGRAMFILES(X86)', r'C:\Program Files (x86)'), ('PROGRAMFILES', r'C:\Program Files')]:
+        cands.append(os.path.join(os.environ.get(env, default), 'Microsoft', 'Edge', 'Application', 'msedge.exe'))
+    cands += ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+              shutil.which('google-chrome') or '', shutil.which('chromium') or '', shutil.which('chromium-browser') or '']
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    return None
+
+
+class MiniWS(object):
+    """CDP 用の最小限の WebSocket クライアント（標準ライブラリのみ。テキストフレームの送受信）"""
+
+    def __init__(self, url):
+        u = urllib.parse.urlparse(url)
+        self.sock = socket.create_connection((u.hostname, u.port or 80), timeout=300)
+        key = base64.b64encode(os.urandom(16)).decode()
+        req = ('GET %s HTTP/1.1\r\nHost: %s:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+               'Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n') % (u.path or '/', u.hostname, u.port or 80, key)
+        self.sock.sendall(req.encode('ascii'))
+        self.buf = bytearray()
+        while b'\r\n\r\n' not in self.buf:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise RuntimeError('Chrome との WebSocket 接続に失敗した')
+            self.buf += chunk
+        end = self.buf.index(b'\r\n\r\n')
+        status = bytes(self.buf[:end]).split(b'\r\n')[0]
+        del self.buf[:end + 4]
+        if b' 101' not in status:
+            raise RuntimeError('Chrome との WebSocket 接続に失敗した: %s' % status.decode('latin-1'))
+
+    def _read(self, n):
+        while len(self.buf) < n:
+            chunk = self.sock.recv(max(65536, n - len(self.buf)))
+            if not chunk:
+                raise RuntimeError('Chrome との接続が切れた')
+            self.buf += chunk
+        out = bytes(self.buf[:n])
+        del self.buf[:n]
+        return out
+
+    def _frame(self, op, data):
+        n = len(data)
+        hdr = bytearray([0x80 | op])
+        if n < 126:
+            hdr.append(0x80 | n)
+        elif n < 65536:
+            hdr.append(0x80 | 126)
+            hdr += struct.pack('>H', n)
+        else:
+            hdr.append(0x80 | 127)
+            hdr += struct.pack('>Q', n)
+        mask = os.urandom(4)
+        hdr += mask
+        body = bytearray(data)
+        for i in range(n):
+            body[i] ^= mask[i & 3]
+        self.sock.sendall(bytes(hdr) + bytes(body))
+
+    def send(self, text):
+        self._frame(0x1, text.encode('utf-8'))
+
+    def recv(self):
+        msg = bytearray()
+        while True:
+            b1, b2 = self._read(2)
+            fin, op, n = b1 & 0x80, b1 & 0x0F, b2 & 0x7F
+            if n == 126:
+                n = struct.unpack('>H', self._read(2))[0]
+            elif n == 127:
+                n = struct.unpack('>Q', self._read(8))[0]
+            mask = self._read(4) if b2 & 0x80 else None
+            data = self._read(n)
+            if mask:
+                data = bytes(b ^ mask[i & 3] for i, b in enumerate(data))
+            if op == 0x9:          # ping → pong
+                self._frame(0xA, data)
+                continue
+            if op == 0xA:          # pong
+                continue
+            if op == 0x8:
+                raise RuntimeError('Chrome が接続を閉じた')
+            msg += data
+            if fin:
+                return msg.decode('utf-8')
+
+    def close(self):
+        try:
+            self._frame(0x8, b'')
+        except Exception:
+            pass
+        self.sock.close()
+
+
+def builtin_cdp():
+    port = int(os.environ.get('CDP_PORT', '9222'))
+    proc = []
+
+    def is_running():
+        try:
+            urllib.request.urlopen('http://127.0.0.1:%d/json/version' % port, timeout=2).read()
+            return True
+        except Exception:
+            return False
+
+    def start():
+        exe = find_browser()
+        if not exe:
+            sys.exit('Chrome が見つからない。環境変数 CDP_CHROME に chrome.exe の場所を入れて実行し直すこと。')
+        profile = os.path.join(tempfile.gettempdir(), 'smile_threshold_render_profile')
+        args = [exe, '--remote-debugging-port=%d' % port, '--user-data-dir=%s' % profile,
+                '--no-first-run', '--no-default-browser-check', '--disable-background-timer-throttling',
+                '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+                '--force-device-scale-factor=1', '--window-size=1200,1400']   # 画面の拡大率（125% など）の影響を受けない
+        if os.environ.get('CDP_HEADLESS') == '1':
+            args.append('--headless=new')
+        args += os.environ.get('CDP_CHROME_ARGS', '').split()   # 追加の起動オプション（通常は不要）
+        args.append('about:blank')
+        print('Chrome を起動: %s' % exe)
+        proc.append(subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        for _ in range(60):
+            if is_running():
+                return
+            time.sleep(0.5)
+        sys.exit('Chrome のデバッグ用ポート %d に接続できなかった（別の Chrome が使っていないか確認）' % port)
+
+    def stop():
+        for p in proc:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+
+    return {'PORT': port, 'is_running': is_running, 'start': start, 'stop': stop, 'WS': MiniWS}
+
+
+def get_cdp():
+    path = find_cdp_py()
+    if path:
+        rs.CDP = path
+        ns = rs.load_cdp()
+        if all(k in ns for k in ('PORT', 'WS', 'is_running', 'start')):
+            print('Chrome の操作: %s' % path)
+            return ns
+    print('Chrome の操作: 内蔵の簡易版（cdp.py が見つからないため）')
+    return builtin_cdp()
+
+
 def open_tab(ns):
     """render.html を新しいタブで開き、そのタブに接続する（render_slide_faces.py と同じ方式）。"""
     t = json.loads(urllib.request.urlopen(urllib.request.Request(
@@ -161,13 +337,14 @@ def main():
                 sys.exit('VRM が無い: %s' % p)
         if not os.path.isdir(out_dir):
             os.makedirs(out_dir)
-        ns = rs.load_cdp()
+        ns = get_cdp()
         httpd = rs.serve()
         try:
             if not ns['is_running']():
                 ns['start']()
                 time.sleep(1.5)
             ev, close = open_tab(ns)
+            size_warned = False
             try:
                 for avatar in ['male', 'female']:
                     todo = [r for r in rows_to_render if r['avatar'] == avatar]
@@ -183,6 +360,9 @@ def main():
                         shapes = shapes_of(r)
                         url = ev("RENDER(%s)" % json.dumps(shapes))
                         im = Image.open(io.BytesIO(base64.b64decode(url.split(',')[1]))).convert('RGB')
+                        if im.size != (1000, 1250) and not size_warned:
+                            print('  注意：画像が %dx%d 画素（実験1は 1000x1250）。画面の拡大率の影響の可能性' % im.size)
+                            size_warned = True
                         im.save(os.path.join(out_dir, r['stimulus_id'] + '.png'), optimize=True, compress_level=9)
                         print('  %-14s %s' % (r['stimulus_id'],
                                               ', '.join('%s=%.2f' % kv for kv in sorted(shapes.items())) or '(中立)'))
@@ -190,6 +370,8 @@ def main():
                 close()
         finally:
             httpd.shutdown()
+            if 'stop' in ns:
+                ns['stop']()   # 内蔵版で起動した Chrome を閉じる
 
     for avatar, tag in [('male', 'M'), ('female', 'F')]:
         path = os.path.join(rs.HERE, '閾値刺激一覧_%s.png' % tag)

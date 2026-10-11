@@ -51,6 +51,10 @@ python render_threshold_stimuli.py ..\stimuli\stimuli.csv ..\docs\images
 一部だけ作り直すときは `--only=M_smile_050,F_both_100`（`--only M_smile_050,F_both_100` も可）、
 確認用の一覧だけ作り直すときは `--sheet` を付ける。
 
+Chrome の操作には、paper-research スキルの `cdp.py` があればそれを使う（実験1と同じ）。無ければ、Chrome（無ければ Edge）を
+専用のプロファイルで自動的に起動して操作し、終わったら閉じる。Chrome が標準の場所に無いときは、環境変数 `CDP_CHROME` に
+`chrome.exe` の場所を入れる（例：`set CDP_CHROME=C:\Program Files\Google\Chrome\Application\chrome.exe`）。
+
 - 書き出し後、`render/閾値刺激一覧_M.png`・`_F.png`（行＝4通り、列＝強さ）で見え方を確認する
 - **画像には非可逆圧縮をかけない**（条件間の差が小さいため。スクリプトは可逆圧縮のみ）
 - 強さや組み合わせを変えるときは `stimuli/make_stimulus_list.py` を直して `stimuli.csv` を作り直す
