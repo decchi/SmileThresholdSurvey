@@ -18,7 +18,7 @@ window.SURVEY_CONFIG = {
   /* ── 保存先 ───────────────────────────────────────────
    * Google Apps Script の Web アプリ URL（/exec で終わるもの）。設置手順は README.md。
    * 空のままでも動く。その場合は最後に回答を CSV で保存してもらう方式になる。      */
-  submitUrl: "",
+  submitUrl: "https://script.google.com/macros/s/AKfycbzIkCpeIs6hOn_6E3VrSs0Joq4DvGVTRSTjDdflz8kR1SFsXgx7R46PrVAq-orWtVXn4w/exec",
 
   /* ── 刺激の提示 ─────────────────────────────────────── */
   imageDir: "images/",
