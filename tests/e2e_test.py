@@ -115,6 +115,9 @@ def make_site(images):
         src = open(os.path.join(DOCS, 'config.range.js'), encoding='utf-8').read()
         f.write(src + '\nwindow.SURVEY_CONFIG_OVERLAY.submitUrl = "http://127.0.0.1:8766/exec";'
                 '\nwindow.SURVEY_CONFIG_OVERLAY.timing = { itiMs: 20, fixationMs: 20, minViewMs: 20 };\n')
+    for f in os.listdir(os.path.join(site, 'images')):   # 本物の刺激は使わない（代用画像か、画像なし）
+        if f.endswith('.png'):
+            os.remove(os.path.join(site, 'images', f))
     if images:
         from PIL import Image, ImageDraw
         for r in csv.DictReader(io.open(STIM, encoding='utf-8')):
