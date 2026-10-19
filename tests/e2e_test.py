@@ -16,8 +16,9 @@ docs/ を一時フォルダに複製し、config.test.js（保存先＝模擬サ
   画像なし  代替表示になり image_loaded=0 が記録される
   端末      スマートフォンの UA では先に進めない
   画面      1366×657 で顔と回答ボタンが画面内に収まる
-  大きさの確認  顔が収まらないウィンドウでは確認画面が出る。最大化して確認し直すと進め、
-                「このまま進む」でも最後まで答えられる（縮めた表示が shrunk に記録される）
+  大きさの確認  13.3型を最大化した程度（数%の縮小）では確認画面を出さない。顔が 5% を超えて縮むウィンドウでは
+                確認画面が出て、最大化して確認し直すと進め、「このまま進む」でも最後まで答えられる
+                （縮めた表示が shrunk に記録される）
 """
 import csv, io, json, math, os, random, shutil, sys, tempfile, threading, time
 import http.server, socketserver, functools, urllib.parse
@@ -283,13 +284,26 @@ def main():
         ctx.close()
 
         # ---- 画面の大きさの確認 ----
-        # (1) 顔が収まらないウィンドウ → 確認画面。まだ小さいまま確認し直すと注意、最大化してから確認し直すと進める
-        ctx = browser.new_context(viewport={'width': 1100, 'height': 600}, screen={'width': 1366, 'height': 768})
+        # (0) 13.3型 16:9（幅 294 mm）・1920×1080 を拡大150%（1280×720）、ウィンドウ最大化（高さ 590 px 前後）
+        #     → 4.35 px/mm（カード幅 372 px）。顔は 97 mm 程度に縮むが、許容（5%）の内なので確認画面は出ない
+        ctx = browser.new_context(viewport={'width': 1280, 'height': 590}, screen={'width': 1280, 'height': 720})
+        page = ctx.new_page()
+        page.goto(base + 'index.html?config=test&debug&pid=fit13')
+        page.check('input[type=checkbox]'); page.click('text=次へ')
+        page.wait_for_selector('text=画面の大きさの調整')
+        assert 'ウィンドウが小さいようです' not in page.inner_text('.card')   # 最大化したノートPCでは較正の画面で注意しない
+        page.evaluate("() => { const s = document.querySelector('input[type=range]'); s.value = '372'; s.dispatchEvent(new Event('input')); }")
+        page.click('text=大きさを合わせた')
+        page.wait_for_function("() => /練習を始める|画面の大きさの確認/.test(document.body.innerText)")
+        assert page.locator('h1:has-text("画面の大きさの確認")').count() == 0, '13.3型で確認画面が出た'
+        ctx.close()
+        # (1) 顔が 5% を超えて縮むウィンドウ → 確認画面。まだ小さいまま確認し直すと注意、最大化してから確認し直すと進める
+        ctx = browser.new_context(viewport={'width': 1100, 'height': 560}, screen={'width': 1366, 'height': 768})
         page = ctx.new_page()
         page.goto(base + 'index.html?config=test&debug&pid=fit02')
         page.check('input[type=checkbox]'); page.click('text=次へ')
         page.wait_for_selector('text=画面の大きさの調整')
-        # 14型ノートPC相当の較正（4.42 px/mm、カード幅 378 px）→ 顔 442×552 px は高さ 600 に収まらない
+        # 14型ノートPC相当の較正（4.42 px/mm、カード幅 378 px）→ 顔 442×552 px は高さ 560 では 90 mm に縮む
         page.evaluate("() => { const s = document.querySelector('input[type=range]'); s.value = '378'; s.dispatchEvent(new Event('input')); }")
         page.click('text=大きさを合わせた')
         page.wait_for_selector('h1:has-text("画面の大きさの確認")')
@@ -308,7 +322,7 @@ def main():
         p = gas.payloads[-1]
         assert p['session']['n_shrunk'] > 0 and p['session']['display_mm_max'] < 100, (p['session']['n_shrunk'], p['session']['display_mm_max'])
         assert '回答は全部で8問' in LAST['instructions'] and '本番を7問お答え' in LAST['instructions'], LAST['instructions']
-        results.append('画面の大きさ: 収まらないと確認画面、最大化して確認し直すと進む。「このまま進む」では顔を %.0f mm に縮めて記録' % p['session']['display_mm_max'])
+        results.append('画面の大きさ: 13.3型の最大化（約97 mm）では確認画面なし。5%%を超えて縮むと確認画面、最大化して確認し直すと進む。「このまま進む」では顔を %.0f mm に縮めて記録' % p['session']['display_mm_max'])
         ctx.close()
 
         # ---- 範囲確認 ----

@@ -431,7 +431,9 @@ textarea{width:100%;min-height:90px}
       var skip = h('button', { class: 'link', type: 'button', text: 'カードが手元にない場合はこちら' });
       skip.addEventListener('click', function () { S.pxPerMm = DEFAULT_PX_PER_MM; S.calibrationMethod = 'default'; resolve(); });
       draw();
-      var small = window.innerHeight < 600 || window.innerWidth < 1000;
+      // 明らかに小さいウィンドウだけに注意する。最大化したノートPC（13〜14型・拡大150%で高さ 590 px 前後）では出さない。
+      // 顔が実寸で収まるかは、較正のあとの screenFitCheck で確かめる
+      var small = window.innerHeight < 500 || window.innerWidth < 900;
       show(page(h('h1', { text: '画面の大きさの調整' }),
         h('p', { text: '顔の画像を、どの画面でも同じ大きさで表示するための調整です。' }),
         h('p', { text: 'クレジットカードやポイントカードなど、一般的な大きさのカードを画面の四角形に重ね、四角形がカードと同じ大きさになるまでスライダーを動かしてください。' }),
@@ -447,13 +449,17 @@ textarea{width:100%;min-height:90px}
   // 画面較正のあと：顔を決まった大きさで出せないウィンドウなら、最大化を促す（このまま進むこともできる）
   function screenFitCheck() {
     var fc = cfg.fitCheck;
-    if (!fc || !displaySize().shrunk) return Promise.resolve();
+    function tooSmall() {   // tolerance までの縮小は許す（縮めた幅は試行ごとに記録される）
+      var d = displaySize();
+      return d.shrunk && d.mm < cfg.stimulusWidthMm * (1 - (fc.tolerance || 0));
+    }
+    if (!fc || !tooSmall()) return Promise.resolve();
     return new Promise(function (resolve) {
       var msg = h('p', { class: 'warn' });
       var retry = h('button', { class: 'btn', type: 'button', text: fc.retryLabel });
       var go = h('button', { class: 'btn secondary', type: 'button', text: fc.proceedLabel });
       retry.addEventListener('click', function () {
-        if (!displaySize().shrunk) resolve();
+        if (!tooSmall()) resolve();
         else msg.textContent = fc.stillSmall;
       });
       go.addEventListener('click', function () { resolve(); });
