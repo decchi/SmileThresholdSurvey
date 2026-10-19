@@ -9,12 +9,15 @@ docs/ を一時フォルダに複製し、config.test.js（保存先＝模擬サ
 本物の Apps Script と同じく、POST には 302 で別URLへ転送して JSON を返す模擬サーバを使う。
 
 確かめること
-  本番      練習2・本試行112・確認問題2。各画像がブロックごとに1回ずつ、連続しない。確認問題は窓の範囲
-  範囲確認  ?config=range で本試行80・1ブロック
+  本番      練習2・本試行84（3通り×7段階×2体×2回）・確認問題2。各画像がブロックごとに1回ずつ、連続しない。
+            確認問題は窓の範囲。説明に回答数（全部で88問）が出る。回答は「不自然」=1・「自然」=0
+  範囲確認  ?config=range で本試行60・1ブロック（説明は全部で64問）
   送信失敗  保存先が応答しないとき、CSV の保存画面に切り替わり、CSV の中身が揃っている
   画像なし  代替表示になり image_loaded=0 が記録される
   端末      スマートフォンの UA では先に進めない
   画面      1366×657 で顔と回答ボタンが画面内に収まる
+  大きさの確認  顔が収まらないウィンドウでは確認画面が出る。最大化して確認し直すと進め、
+                「このまま進む」でも最後まで答えられる（縮めた表示が shrunk に記録される）
 """
 import csv, io, json, math, os, random, shutil, sys, tempfile, threading, time
 import http.server, socketserver, functools, urllib.parse
@@ -29,8 +32,10 @@ if '--keep' in sys.argv:
     KEEP = os.path.abspath(sys.argv[sys.argv.index('--keep') + 1])
     os.makedirs(KEEP, exist_ok=True)
 
-# 模擬参加者：4通りごとの「違和感あり」の確率（ロジスティック）。閾値（50%点）と傾き
-TRUE = {'smile': (0.85, 18.0), 'eye': (0.75, 18.0), 'lip': (0.65, 18.0), 'both': (0.60, 18.0)}
+# 模擬参加者：組み合わせごとの「不自然」の確率（ロジスティック）。閾値（50%点）と傾き
+TRUE = {'smile': (0.85, 18.0), 'eye': (0.75, 18.0), 'both': (0.60, 18.0)}
+YES = '不自然'          # config.js の question.yesLabel（記録は response = 1）
+LAST = {}             # 直近の参加者で見えた説明文など
 
 
 def p_yes(combo, level):
@@ -129,7 +134,8 @@ def make_site(images):
     return tmp, site
 
 
-def run_participant(page, base, query, rng, viewport=None, shot=None):
+def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
+    """fit：画面の大きさの確認が出たときの対応（None = 出ないはず、'proceed' = このまま進む）"""
     page.goto(base + 'index.html?' + query)
     page.wait_for_selector('text=調査へのご協力のお願い')
     if page.locator('input[type=text]').count():
@@ -138,7 +144,14 @@ def run_participant(page, base, query, rng, viewport=None, shot=None):
     page.click('text=次へ')
     page.wait_for_selector('text=画面の大きさの調整')
     page.click('text=大きさを合わせた')
+    page.wait_for_function("() => /練習を始める|画面の大きさの確認/.test(document.body.innerText)")
+    warned = page.locator('h1:has-text("画面の大きさの確認")').count() > 0
+    LAST['fit_warned'] = warned
+    assert warned == (fit is not None), ('fit check', warned, fit)
+    if warned:
+        page.click('button:has-text("このまま進む")')
     page.wait_for_selector('text=練習を始める')
+    LAST['instructions'] = page.inner_text('.card')
     page.wait_for_function("() => { const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='練習を始める'); return b && !b.disabled; }", timeout=60000)
     page.click('text=練習を始める')
     shot_done = False
@@ -164,7 +177,7 @@ def run_participant(page, base, query, rng, viewport=None, shot=None):
         else:
             parts = cur['id'].split('_')
             want = 1 if rng.random() < p_yes(parts[1], int(parts[2]) / 100.0) else 0
-        yes_left = left_label.startswith('違和感あり')
+        yes_left = left_label.startswith(YES)
         key = 'f' if (want == 1) == yes_left else 'j'
         if rng.random() < 0.5:
             page.keyboard.press(key)
@@ -238,11 +251,16 @@ def main():
             assert not errors, errors
             assert page.locator('.code').inner_text().startswith('SMILET-')
             p = gas.payloads[-1]
-            s = check_payload(p, 112, 2, levels)
+            s = check_payload(p, 84, 2, levels)
             assert s['images_loaded'] == 1, s['images_loaded']
+            assert '回答は全部で88問' in LAST['instructions'] and '本番を86問（前半43問、休憩、後半43問）' in LAST['instructions'], LAST['instructions']
+            assert p['session']['experiment_id'] == 'thr2'
+            assert {t['response_label'] for t in p['trials'] if t['phase'] == 'main'} <= {'不自然', '自然'}
+            assert all((t['response'] == 1) == (t['response_label'] == '不自然') for t in p['trials'])
+            assert sorted({t['combo'] for t in p['trials'] if t['phase'] == 'main'}) == ['both', 'eye', 'smile']
             assert s['n_shrunk'] == 0 or s['display_mm_min'] > 0
             assert p['trials'][-1]['response'] in (0, 1)
-            results.append('本番 %d: %d 試行、完了コード %s、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
+            results.append('本番 %d: %d 回答（3通り）、完了コード %s、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
                 k + 1, n, s['completion_code'], s['display_mm_min'], s['display_mm_max'], s['n_shrunk'], s['button_order']))
             ctx.close()
         # 同じ乱数の種なら同じ提示順になる
@@ -264,14 +282,44 @@ def main():
         results.append('1366×657：顔 %dx%d px（既定の較正で %.0f mm 幅）、ボタンも画面内' % (box['width'], box['height'], box['width'] / (96 / 25.4)))
         ctx.close()
 
+        # ---- 画面の大きさの確認 ----
+        # (1) 顔が収まらないウィンドウ → 確認画面。まだ小さいまま確認し直すと注意、最大化してから確認し直すと進める
+        ctx = browser.new_context(viewport={'width': 1100, 'height': 600}, screen={'width': 1366, 'height': 768})
+        page = ctx.new_page()
+        page.goto(base + 'index.html?config=test&debug&pid=fit02')
+        page.check('input[type=checkbox]'); page.click('text=次へ')
+        page.wait_for_selector('text=画面の大きさの調整')
+        # 14型ノートPC相当の較正（4.42 px/mm、カード幅 378 px）→ 顔 442×552 px は高さ 600 に収まらない
+        page.evaluate("() => { const s = document.querySelector('input[type=range]'); s.value = '378'; s.dispatchEvent(new Event('input')); }")
+        page.click('text=大きさを合わせた')
+        page.wait_for_selector('h1:has-text("画面の大きさの確認")')
+        assert '13インチ以上' in page.inner_text('.card') and '幅 100 mm' in page.inner_text('.card')
+        page.click('button:has-text("もう一度確認する")')
+        page.wait_for_selector('text=まだ収まりません')
+        page.set_viewport_size({'width': 1366, 'height': 768})
+        page.click('button:has-text("もう一度確認する")')
+        page.wait_for_selector('text=練習を始める')
+        ctx.close()
+        # (2) 「このまま進む」でも最後まで答えられ、縮めた表示が記録される（短縮版）
+        # 画面（screen）はノートPC、ウィンドウだけが小さい状態（screen も小さいとスマートフォン扱いで断られる）
+        ctx = browser.new_context(viewport={'width': 1000, 'height': 500}, screen={'width': 1366, 'height': 768})
+        page = ctx.new_page()
+        run_participant(page, base, 'config=test&debug&demo&pid=fit03', random.Random(9), fit='proceed')
+        p = gas.payloads[-1]
+        assert p['session']['n_shrunk'] > 0 and p['session']['display_mm_max'] < 100, (p['session']['n_shrunk'], p['session']['display_mm_max'])
+        assert '回答は全部で8問' in LAST['instructions'] and '本番を7問お答え' in LAST['instructions'], LAST['instructions']
+        results.append('画面の大きさ: 収まらないと確認画面、最大化して確認し直すと進む。「このまま進む」では顔を %.0f mm に縮めて記録' % p['session']['display_mm_max'])
+        ctx.close()
+
         # ---- 範囲確認 ----
         ctx = browser.new_context(viewport={'width': 1440, 'height': 900})
         page = ctx.new_page()
         n = run_participant(page, base, 'config=testrange&debug&pid=lab01', random.Random(7))
         p = gas.payloads[-1]
-        s = check_payload(p, 80, 1, [round(0.1 * i, 1) for i in range(1, 11)])
-        assert p['session']['experiment_id'] == 'range' and s['completion_code'].startswith('SMILER-')
-        results.append('範囲確認: %d 試行（本試行 80・確認問題 2・練習 2）' % n)
+        s = check_payload(p, 60, 1, [round(0.1 * i, 1) for i in range(1, 11)])
+        assert p['session']['experiment_id'] == 'range2' and s['completion_code'].startswith('SMILER-')
+        assert '回答は全部で64問' in LAST['instructions'] and '本番を62問お答え' in LAST['instructions'], LAST['instructions']
+        results.append('範囲確認: %d 回答（本試行 60・確認問題 2・練習 2）、説明に「全部で64問」' % n)
         ctx.close()
 
         # ---- 送信失敗 → CSV ----

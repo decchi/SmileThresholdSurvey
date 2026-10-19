@@ -69,7 +69,8 @@ textarea{width:100%;min-height:90px}
 <div id="app"><div class="page"><div class="card"><p>読み込み中です…</p><noscript><p class="warn">この調査には JavaScript が必要です。</p></noscript></div></div></div>
 <script>
 /* 違和感の閾値の測定（恒常法）── 回答画面
- * 流れ：環境の確認 → 同意 → 画面較正 → 説明（画像の読み込み）→ 練習 → 本試行（ブロック間に休憩）
+ * 流れ：環境の確認 → 同意 → 画面較正 →（顔が収まらないウィンドウなら、大きさの確認）
+ *       → 説明（画像の読み込み）→ 練習 → 本試行（ブロック間に休憩）
  *       → 属性 → 送信（Apps Script）→ 完了コード。送信できないときは回答を CSV で保存させる。
  * 設定は config.js（?config=<名前> で config.<名前>.js を重ねる）。
  * URL パラメータ：pid（参加者ID）, config, demo（短縮版）, nocheck（端末の確認を省く）,
@@ -130,6 +131,16 @@ textarea{width:100%;min-height:90px}
   function show(node) { app.textContent = ''; app.appendChild(node); window.scrollTo(0, 0); }
   function page() { var card = h('div', { class: 'card' }); addKids(card, Array.prototype.slice.call(arguments)); return h('div', { class: 'page' }, card); }
   function paras(list) { return (list || []).map(function (t) { return h('p', { text: t }); }); }
+  // 文言の {名前} を vars の値に置き換える。要素が { multiBlock, singleBlock } なら、ブロック数で使い分ける
+  function fill(text, vars) {
+    return String(text).replace(/\{(\w+)\}/g, function (m, k) { return vars[k] != null ? String(vars[k]) : m; });
+  }
+  function texts(list, vars) {
+    return (list || []).map(function (e) {
+      if (isObj(e)) e = vars.blocks > 1 ? e.multiBlock : e.singleBlock;
+      return e == null ? null : fill(e, vars);
+    }).filter(function (t) { return t; });
+  }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function frames(n) { return new Promise(function (r) { var k = 0; function f() { if (++k >= n) r(); else requestAnimationFrame(f); } requestAnimationFrame(f); }); }
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -433,6 +444,24 @@ textarea{width:100%;min-height:90px}
     });
   }
 
+  // 画面較正のあと：顔を決まった大きさで出せないウィンドウなら、最大化を促す（このまま進むこともできる）
+  function screenFitCheck() {
+    var fc = cfg.fitCheck;
+    if (!fc || !displaySize().shrunk) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var msg = h('p', { class: 'warn' });
+      var retry = h('button', { class: 'btn', type: 'button', text: fc.retryLabel });
+      var go = h('button', { class: 'btn secondary', type: 'button', text: fc.proceedLabel });
+      retry.addEventListener('click', function () {
+        if (!displaySize().shrunk) resolve();
+        else msg.textContent = fc.stillSmall;
+      });
+      go.addEventListener('click', function () { resolve(); });
+      show(page(h('h1', { text: fc.heading }), paras(texts(fc.body, { mm: cfg.stimulusWidthMm })), msg,
+        h('div', { class: 'row' }, retry, go)));
+    });
+  }
+
   function screenInstructions(sched) {
     return new Promise(function (resolve) {
       var meter = h('i'), status = h('p', { class: 'note', text: '画像を読み込んでいます…' });
@@ -446,7 +475,11 @@ textarea{width:100%;min-height:90px}
         go.disabled = false;
       });
       go.addEventListener('click', function () { clearTimeout(timer); resolve(); });
-      show(page(h('h1', { text: cfg.instructions.heading }), paras(cfg.instructions.body),
+      // 回答数は実際の提示順から数える（短縮版・範囲確認でも正しい数になる）
+      var nMain = sched.blocks.reduce(function (n, b) { return n + b.length; }, 0);
+      var vars = { practice: sched.practice.length, main: nMain, total: sched.practice.length + nMain,
+        blocks: sched.blocks.length, perBlock: sched.blocks.length ? sched.blocks[0].length : 0 };
+      show(page(h('h1', { text: cfg.instructions.heading }), paras(texts(cfg.instructions.body, vars)),
         h('div', { class: 'meter' }, meter), status, h('div', { class: 'row' }, go)));
     });
   }
@@ -605,6 +638,7 @@ textarea{width:100%;min-height:90px}
     protect(true);
 
     await screenCalibration();
+    await screenFitCheck();
     var sched = buildSchedule();
     await screenInstructions(sched);
 

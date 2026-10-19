@@ -4,26 +4,27 @@
     python analysis/threshold.py --responses responses.csv --sessions sessions.csv
     python analysis/threshold.py --csv-dir 提出されたCSVのフォルダ          # 送信できず CSV で提出された分
     python analysis/threshold.py --raw raw.csv                            # raw シートからの復元
-    python analysis/threshold.py ... --experiment range                   # 範囲確認の集計
+    python analysis/threshold.py ... --experiment range2                  # 範囲確認の集計
     python analysis/threshold.py ... --check-codes platform.csv           # 完了コードの照合
 
 入力は Google スプレッドシートの各シートを「ファイル > ダウンロード > CSV」で保存したもの。
 複数の入力を同時に渡すと、session_id の重複を除いてまとめる。
 
 手順
-  1. 対象の実験（experiment_id）と mode = main の回答だけを使う（短縮版 demo は除く）
+  1. 対象の実験（experiment_id。既定は本番の thr2）と mode = main の回答だけを使う（短縮版 demo は除く）
+     ※ thr1・range は、質問と見せる顔を変える前（2026-10-20 より前）の版
   2. 除外：確認問題の不正解（データを見る前に決めた基準）、画像の読み込み失敗、同じ参加者IDの2回目以降
      ※ 反応の速すぎ・全試行同じ答えなどは participants.csv に印を付けるだけで、除外はしない
-  3. 4通り（口角だけ・＋目・＋上唇・＋両方）ごとに、強さ別の「違和感あり」の割合を求める
-     （2体をまとめた値と、体ごとの値）
+  3. 見せた組み合わせ（今は口角だけ・＋目・＋両方の3通り）ごとに、強さ別の回答 1 の割合を求める
+     （回答 1 は「不自然」。旧版では「違和感あり」。2体をまとめた値と、体ごとの値）
   4. ロジスティック関数（S字の曲線）を最尤法で当てはめ、50%点と25%点を求める
   5. 参加者を単位にしたブートストラップ（既定 2000 回）で 95% 信頼区間を付ける
 
 出力（--out、既定 results/）
-  thresholds.csv     4通り × {全体, 男性, 女性} の 50%点・25%点と信頼区間
-  proportions.csv    強さ別の回答数・「違和感あり」の数・割合
+  thresholds.csv     組み合わせ × {全体, 男性, 女性} の 50%点・25%点と信頼区間
+  proportions.csv    強さ別の回答数・回答 1（不自然）の数・割合
   participants.csv   参加者ごとの確認問題・除外の理由・印・完了コードの照合
-  psychometric.png   4通りの曲線（2体をまとめた値）
+  psychometric.png   組み合わせごとの曲線（2体をまとめた値）
   psychometric_by_avatar.png  体ごとの曲線
   summary.txt        結果の要約
 """
@@ -38,9 +39,9 @@ import sys
 import numpy as np
 import pandas as pd
 
-COMBOS = [('smile', '口角だけ'), ('eye', '＋目'), ('lip', '＋上唇'), ('both', '＋両方')]
+COMBOS_ALL = [('smile', '口角だけ'), ('eye', '＋目'), ('lip', '＋上唇'), ('both', '＋両方')]   # 並べる順と表示名
 AVATARS = [('all', '全体'), ('male', '男性'), ('female', '女性')]
-CODE_PREFIX = {'thr1': 'SMILET-', 'range': 'SMILER-'}
+CODE_PREFIX = {'thr2': 'SMILET-', 'range2': 'SMILER-', 'thr1': 'SMILET-', 'range': 'SMILER-'}
 CODE_SALT = '261011'
 LOGIT25 = math.log(0.25 / 0.75)
 
@@ -173,7 +174,7 @@ def main():
     ap.add_argument('--csv-dir')
     ap.add_argument('--raw')
     ap.add_argument('--json', help='模擬回答（tests/e2e_test.py --keep の payloads.json）')
-    ap.add_argument('--experiment', default='thr1')
+    ap.add_argument('--experiment', default='thr2')
     ap.add_argument('--out', default='results')
     ap.add_argument('--boot', type=int, default=2000)
     ap.add_argument('--seed', type=int, default=1)
@@ -247,9 +248,20 @@ def main():
     prop.to_csv(os.path.join(args.out, 'proportions.csv'), index=False, encoding='utf-8-sig')
     levels = sorted(d['level'].unique())
     lo_lv, hi_lv = min(levels), max(levels)
+    # 見せた組み合わせ（データにあるものだけ。並びは COMBOS_ALL の順）と、回答 1 の表示名
+    present = set(d['combo'])
+    COMBOS = [c for c in COMBOS_ALL if c[0] in present]
+    unknown = sorted(present - {c for c, _ in COMBOS_ALL})
+    if unknown:
+        sys.exit('知らない組み合わせがある: %s' % ', '.join(unknown))
+    yes_label = '回答 1'
+    if 'response_label' in d.columns:
+        lab = d.loc[d['response'] == 1, 'response_label'].dropna().astype(str)
+        if len(lab):
+            yes_label = lab.value_counts().index[0]
 
     # ---- 当てはめとブートストラップ ----
-    # 参加者 × 体 × 4通り × 強さ の集計表（ブートストラップで足し合わせる）
+    # 参加者 × 体 × 組み合わせ × 強さ の集計表（ブートストラップで足し合わせる）
     cnt = d.groupby(['session_id', 'avatar', 'combo', 'level'])['response'].agg(['size', 'sum']).reset_index()
     sids = sorted(inc)
     idx = {s: i for i, s in enumerate(sids)}
@@ -302,7 +314,8 @@ def main():
     res.round(4).to_csv(os.path.join(args.out, 'thresholds.csv'), index=False, encoding='utf-8-sig')
 
     # ---- 要約 ----
-    lines = ['実験 %s：参加者 %d 名のうち %d 名を分析（除外 %d 名）' % (exp, len(P), n_p, len(P) - n_p)]
+    lines = ['実験 %s：参加者 %d 名のうち %d 名を分析（除外 %d 名）' % (exp, len(P), n_p, len(P) - n_p),
+             '閾値は「%s」の割合から求めた値。組み合わせ：%s' % (yes_label, '・'.join(l for _, l in COMBOS))]
     for reason, k in P.loc[~P['included'], 'exclude_reason'].value_counts().items():
         lines.append('  除外の理由：%s %d 名' % (reason, k))
     flagged = P[P['included'] & (P['flags'] != '')]
@@ -334,7 +347,7 @@ def main():
             len(sub), int(sub['code_ok'].sum()), int(sub['has_response'].sum())))
 
     if not args.no_plot:
-        plot(prop, res, fits, levels, n_p, args.out, exp)
+        plot(prop, res, fits, levels, n_p, args.out, exp, COMBOS, yes_label)
 
 
 # ---------------------------------------------------------------- 図
@@ -359,13 +372,18 @@ def setup_mpl():
     return plt
 
 
-def plot(prop, res, fits, levels, n_p, out, exp):
+def plot(prop, res, fits, levels, n_p, out, exp, combos, yes_label):
     plt = setup_mpl()
     xs = np.linspace(0, 1.05, 300)
+    nc = len(combos)
+    nrow, ncol = (1, nc) if nc <= 3 else (2, 2)
     for which in ['all', 'by_avatar']:
         avs = ['all'] if which == 'all' else ['male', 'female']
-        fig, axes = plt.subplots(2, 2, figsize=(9.6, 7.2), sharex=True, sharey=True)
-        for ax, (combo, label) in zip(axes.ravel(), COMBOS):
+        H = 3.9 * nrow + 0.7                                     # 図の高さ（インチ）。見出しの位置はインチで決める
+        fig, axes = plt.subplots(nrow, ncol, figsize=(4.4 * ncol, H), sharex=True, sharey=True, squeeze=False)
+        for ax in axes.ravel()[nc:]:
+            ax.set_visible(False)
+        for ax, (combo, label) in zip(axes.ravel(), combos):
             ax.grid(True, color=GRID, linewidth=0.8)
             ax.set_axisbelow(True)
             for y in (0.5, 0.25):
@@ -396,17 +414,18 @@ def plot(prop, res, fits, levels, n_p, out, exp):
             ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
             for s in ('top', 'right'):
                 ax.spines[s].set_visible(False)
-        for ax in axes[1]:
+        for ax in axes[-1]:
             ax.set_xlabel('強さ（シェイプの値）')
         for ax in axes[:, 0]:
-            ax.set_ylabel('「違和感あり」の割合')
+            ax.set_ylabel('「%s」の割合' % yes_label)
         sub = '2体をまとめた値。縦線は50%点・25%点、横の線は95%信頼区間' if which == 'all' else '体ごとの値（●男性、□女性）'
-        fig.suptitle('違和感の閾値（%s、%d 名）' % (exp, n_p), x=0.07, y=0.985, ha='left', fontsize=13, fontweight='bold', color=INK)
-        fig.text(0.07, 0.935, sub, ha='left', fontsize=9.5, color=INK2)
+        fig.suptitle('違和感の閾値（%s、%d 名）' % (exp, n_p), x=0.07, y=1 - 0.1 / H, ha='left', va='top',
+                     fontsize=13, fontweight='bold', color=INK)
+        fig.text(0.07, 1 - 0.42 / H, sub, ha='left', va='top', fontsize=9.5, color=INK2)
         if which == 'by_avatar':
             h, l = axes[0, 0].get_legend_handles_labels()
-            fig.legend(h, l, loc='upper right', bbox_to_anchor=(0.98, 0.985), frameon=False, ncol=2)
-        fig.tight_layout(rect=(0, 0, 1, 0.93))
+            fig.legend(h, l, loc='upper right', bbox_to_anchor=(0.98, 1 - 0.06 / H), frameon=False, ncol=2)
+        fig.tight_layout(rect=(0, 0, 1, 1 - 0.58 / H))
         name = 'psychometric.png' if which == 'all' else 'psychometric_by_avatar.png'
         fig.savefig(os.path.join(out, name), dpi=160)
         plt.close(fig)

@@ -3,7 +3,7 @@
 
     python tests/analysis_test.py
 
-40名分の模擬回答を、スプレッドシートの CSV（gas/Code.gs と同じ列）・CSV 提出・raw シートの3形式で作り、
+40名分の模擬回答（3通り × 7段階 × 2体 × 2回）を、スプレッドシートの CSV（gas/Code.gs と同じ列）・CSV 提出・raw シートの3形式で作り、
 分析にかけて次を確かめる。
   - 除外：確認問題の不正解・画像の読み込み失敗・同じIDの2回目・短縮版（demo）が正しく除かれる
   - 50%点・25%点：真の値の近くに推定され、95%信頼区間が真の値を含む
@@ -15,7 +15,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'analysis'))
 import threshold as th  # noqa: E402
 
-TRUE = {'smile': 0.85, 'eye': 0.75, 'lip': 0.65, 'both': 0.60}   # 50%点
+TRUE = {'smile': 0.85, 'eye': 0.75, 'both': 0.60}   # 50%点（今の設計の3通り）
+EXP = 'thr2'
 SLOPE = 14.0
 LEVELS = [0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
@@ -41,19 +42,20 @@ def participant(i, rng, attention_ok=True, images_ok=True, mode='main', pid=None
         rng.shuffle(items)
         for a, c, lv in items:
             p = 1 / (1 + math.exp(-SLOPE * (lv - TRUE[c] - shift)))
+            y = 1 if rng.random() < p else 0
             trials.append(dict(phase='main', block=b, avatar=a, combo=c, level=lv,
                                stimulus_id='%s_%s_%03d' % (a[0].upper(), c, round(lv * 100)),
-                               response=1 if rng.random() < p else 0))
+                               response=y, response_label='不自然' if y else '自然'))
         trials.insert(len(trials) - 30, dict(phase='attention', block=b, stimulus_id='att%d' % b,
                                              response=1 if attention_ok else 0, correct=1 if attention_ok else 0))
     for j, t in enumerate(trials):
-        t.update(session_id=sid, participant_id=pid, experiment_id='thr1', mode=mode, trial_index=j,
+        t.update(session_id=sid, participant_id=pid, experiment_id=EXP, mode=mode, trial_index=j,
                  rt_ms=rng.randint(500, 2500), image_loaded=1 if images_ok else 0, display_mm=100.0)
     att = [t for t in trials if t['phase'] == 'attention']
-    code = th.expected_code(pid, 'thr1')
-    session = dict(session_id=sid, participant_id=pid, experiment_id='thr1', mode=mode, config_name='default',
+    code = th.expected_code(pid, EXP)
+    session = dict(session_id=sid, participant_id=pid, experiment_id=EXP, mode=mode, config_name='default',
                    started_at='2026-10-%02dT10:%02d:00Z' % (12 + i // 50, i % 50), duration_s=600,
-                   completion_code=('SMILET-00000000' if bad_code else code), n_trials_main=112,
+                   completion_code=('SMILET-00000000' if bad_code else code), n_trials_main=84,
                    attention_n=len(att), attention_correct=sum(t['correct'] for t in att),
                    attention_pass=1 if attention_ok else 0, images_loaded=1 if images_ok else 0,
                    free_comment='=SUM(1)' if i == 0 else '', age=30, sex='女性')
@@ -95,7 +97,7 @@ def main():
                 w.writerow(['x', p['session']['session_id'], len(chunks)] + chunks)
         with io.open(os.path.join(tmp, 'platform.csv'), 'w', encoding='utf-8-sig', newline='') as f:
             f.write('participant_id,code\nw001,%s\nw002,SMILET-DEADBEEF\nw999,%s\n' % (
-                th.expected_code('w001', 'thr1'), th.expected_code('w999', 'thr1')))
+                th.expected_code('w001', EXP), th.expected_code('w999', EXP)))
         out = os.path.join(tmp, 'results')
         cmd = [sys.executable, os.path.join(ROOT, 'analysis', 'threshold.py'),
                '--responses', os.path.join(tmp, 'responses.csv'), '--sessions', os.path.join(tmp, 'sessions.csv'),
@@ -104,6 +106,7 @@ def main():
         r = subprocess.run(cmd, capture_output=True, text=True)
         print(r.stdout)
         assert r.returncode == 0, r.stderr
+        assert '「不自然」の割合' in r.stdout and '口角だけ・＋目・＋両方' in r.stdout, r.stdout
 
         import pandas as pd
         parts = pd.read_csv(os.path.join(out, 'participants.csv'), encoding='utf-8-sig')
@@ -124,7 +127,8 @@ def main():
         if '--keep' in sys.argv:
             dst = os.path.abspath(sys.argv[sys.argv.index('--keep') + 1])
             shutil.copytree(out, dst, dirs_exist_ok=True)
-        print('OK  analysis: 除外 3 名・対象外 1 名を正しく扱い、4通りの 50%点・25%点を真の値の近くに回収（信頼区間も真の値を含む）、完了コードの照合も一致')
+        assert sorted(res['combo'].unique()) == sorted(TRUE), res['combo'].unique()
+        print('OK  analysis: 除外 3 名・対象外 1 名を正しく扱い、3通りの 50%点・25%点を真の値の近くに回収（信頼区間も真の値を含む）、完了コードの照合も一致')
     finally:
         shutil.rmtree(tmp)
 

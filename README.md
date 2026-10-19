@@ -1,14 +1,15 @@
 # SmileThresholdSurvey
 
 静止画による笑顔の**違和感の閾値**の測定（恒常法・Webアンケート）。
-アバタの笑顔（口角）に目・上唇を足した4通りの顔について、違和感が出始める強さを求める。結果は笑顔混合のパラメータ（混合の式・混合比率 α の上限）に使う。
+アバタの笑顔について、口角だけ・＋目・＋両方（目と上唇）の3通りの顔を見せ、対話中の聞き手の表情として「不自然」と判断され始める強さを求める。
+結果は笑顔混合のパラメータ（上唇の採否・混合の式・混合比率 α の上限）に使う。
 設計と未決事項は [DESIGN.md](DESIGN.md)。
 
 ```
 docs/                公開するページ（GitHub Pages の公開フォルダ。ここに置いたものはすべて公開される）
   index.html         回答画面。設定を読んで動く汎用の本体
-  config.js          本番の設定（4通り × 7段階 × 2体 × 2回 = 112試行）
-  config.range.js    範囲確認の設定（0.1〜1.0 × 1回 = 80試行）。?config=range で重ねる
+  config.js          本番の設定（3通り × 7段階 × 2体 × 2回 = 84試行。回答は練習・確認問題を含め全部で88問）
+  config.range.js    範囲確認の設定（3通り × 0.1〜1.0 × 2体 × 1回 = 60試行。全部で64問）。?config=range で重ねる
   images/            刺激画像（stimuli/stimuli.csv の stimulus_id.png）
 gas/Code.gs          回答を Google スプレッドシートに保存する Apps Script
 stimuli/             刺激一覧（stimuli.csv）と、その作成スクリプト
@@ -31,7 +32,8 @@ tests/               回答画面・Apps Script・分析の通しテスト
 
 ## 1. 刺激画像を書き出す
 
-刺激は 88 枚（4通り × 11段階 × 2体。本番の 56 枚と範囲確認の 80 枚を合わせて重複を除いたもの）。
+刺激は 88 枚（4通り × 11段階 × 2体）を書き出してある。今の設計で使うのは、口角だけ・＋目・＋両方の 66 枚（本番 42 枚と範囲確認 60 枚の和）。
+目なしで上唇だけの「＋上唇」の 22 枚は 2026-10-19 に外した条件の分で、`stimuli.csv` では `used_in = unused` として残してある。
 VRM と描画の道具は Box の「260903_静止画による笑顔評価」にあるので、`render/render_threshold_stimuli.py` をそこの `render/` に置いて実行する。
 構図・照明・画素数（1000×1250）は実験1の刺激と同じになる。
 
@@ -55,7 +57,7 @@ Chrome の操作には、paper-research スキルの `cdp.py` があればそれ
 専用のプロファイルで自動的に起動して操作し、終わったら閉じる。Chrome が標準の場所に無いときは、環境変数 `CDP_CHROME` に
 `chrome.exe` の場所を入れる（例：`set CDP_CHROME=C:\Program Files\Google\Chrome\Application\chrome.exe`）。
 
-- 書き出し後、`render/閾値刺激一覧_M.png`・`_F.png`（行＝4通り、列＝強さ）で見え方を確認する
+- 書き出し後、`render/閾値刺激一覧_M.png`・`_F.png`（行＝4通り、列＝強さ。＋上唇の行は今は使わない）で見え方を確認する
 - **画像には非可逆圧縮をかけない**（条件間の差が小さいため。スクリプトは可逆圧縮のみ）
 - 強さや組み合わせを変えるときは `stimuli/make_stimulus_list.py` を直して `stimuli.csv` を作り直す
 - 画像が無い間も、回答画面は線画の代替表示で最後まで動く（`image_loaded = 0` として記録され、分析では除外される）
@@ -85,17 +87,18 @@ GitHub の **Settings > Pages** で、Source を「Deploy from a branch」、Bra
 
 ## 4. 実施前の確認
 
-- [ ] 88 枚すべての画像が表示され、「画像未配置（代替表示）」が出ない
-- [ ] 自分で通しで1回答し、`sessions` 1行・`responses` 116行（練習2・本試行112・確認問題2）・`raw` 1行が入る
+- [ ] 使う画像がすべて表示され、「画像未配置（代替表示）」が出ない
+- [ ] 自分で通しで1回答し、`sessions` 1行・`responses` 88行（練習2・本試行84・確認問題2）・`raw` 1行が入る
 - [ ] `?demo` の短縮版が動く（`mode = demo` で記録され、分析では除かれる）
-- [ ] 手元のノートPCで、顔と回答ボタンがスクロールせずに収まる
+- [ ] 手元のノートPCで、顔と回答ボタンがスクロールせずに収まる（ウィンドウを最大化すれば「画面の大きさの確認」が出ない）
 - [ ] 画面較正で、カードと四角形が重なる（複数の端末で）
-- [ ] 質問文・説明文を確定し、`config.js` の【仮】を外す（DESIGN.md 未決事項1）
+- [ ] 質問文・説明文の文面を確定し、`config.js` の【仮】を外す（DESIGN.md 未決事項1。枠組みの「対話中の聞き手の表情として自然／不自然」は決定）
+- [ ] 旧版（`thr1`・`range`）のテスト回答は分析の対象外になるが、紛らわしければスプレッドシートから消す
 - [ ] 研究室内で数名に見せ、刺激が意図どおり書き出されているかを点検する
 
 ## 5. 範囲確認
 
-公開URLに `?config=range` を付けて開く（80試行、約7分）。集計は `--experiment range`。
+公開URLに `?config=range` を付けて開く（60試行。回答は全部で64問、約6分）。集計は `--experiment range2`。
 
 ## 6. URL パラメータ
 
@@ -106,7 +109,7 @@ GitHub の **Settings > Pages** で、Source を「Deploy from a branch」、Bra
 | `?demo` | 短縮版（練習1・本試行6・確認問題1）。動作確認用で、`mode = demo` として記録 |
 | `?nocheck` | スマートフォン判定を素通りする（動作確認用） |
 | `?seed=<数>` | 提示順の乱数の種を固定する（既定はランダム。種は記録される） |
-| `?order=yes_left` / `yes_right` | 「違和感あり」ボタンの左右を固定する（既定は参加者IDで振り分け） |
+| `?order=yes_left` / `yes_right` | 「不自然」ボタンの左右を固定する（既定は参加者IDで振り分け） |
 | `?debug` | 動作確認用に内部状態を `window.__SURVEY__` に出す |
 
 ## 7. 集計
@@ -118,13 +121,15 @@ python analysis/threshold.py --responses responses.csv --sessions sessions.csv -
 # CSV で提出された回答があれば --csv-dir <フォルダ> を追加。raw シートからの復元は --raw raw.csv
 ```
 
-出力は `results/` に、`thresholds.csv`（4通り × {全体・男性・女性} の 50%点・25%点と 95%信頼区間）、`proportions.csv`、`participants.csv`（除外の理由・印・完了コード）、`psychometric.png`・`psychometric_by_avatar.png`、`summary.txt`。
+対象は本番の `thr2`（既定）。範囲確認は `--experiment range2`。旧版の `thr1`・`range`（4通り・「違和感あり／なし」）は混ぜない。
+
+出力は `results/` に、`thresholds.csv`（組み合わせ × {全体・男性・女性} の 50%点・25%点と 95%信頼区間）、`proportions.csv`、`participants.csv`（除外の理由・印・完了コード）、`psychometric.png`・`psychometric_by_avatar.png`、`summary.txt`。
 
 除外するのは、確認問題の不正解・画像の読み込み失敗・同じ参加者IDの2回目以降だけ。反応の速すぎや全試行同じ答えは印を付けるだけにしてある（基準はデータを見る前に決める。DESIGN.md 未決事項5）。
 
 ## 8. 記録される項目
 
-`responses`（試行ごと）：`phase`（practice / main / attention）、`block`、`stimulus_id`・`avatar`・`combo`・`level`・`smile`・`eye`・`lip`、`response`（1 = 違和感あり、0 = 違和感なし）、`correct`（確認問題のみ）、`key`（F / J / クリック）、`rt_ms`（顔の提示から回答まで）、`display_mm`（実際に表示した顔の幅）、`image_loaded` など。
+`responses`（試行ごと）：`phase`（practice / main / attention）、`block`、`stimulus_id`・`avatar`・`combo`・`level`・`smile`・`eye`・`lip`、`response`（1 = 不自然、0 = 自然。旧版では 1 = 違和感あり）、`correct`（確認問題のみ）、`key`（F / J / クリック）、`rt_ms`（顔の提示から回答まで）、`display_mm`（実際に表示した顔の幅）、`image_loaded` など。
 
 `sessions`（参加者ごと）：確認問題の結果、画面較正（`px_per_mm`）、表示幅、所要時間、ボタンの左右、乱数の種、年齢・性別・VR経験・自由記述、完了コードなど。
 
@@ -132,7 +137,7 @@ python analysis/threshold.py --responses responses.csv --sessions sessions.csv -
 
 ```bash
 pip install playwright pillow && playwright install chromium
-python tests/e2e_test.py          # 回答画面を模擬参加者で通す（本番・範囲確認・送信失敗・画像なし・スマホ・1366×657）
+python tests/e2e_test.py          # 回答画面を模擬参加者で通す（本番・範囲確認・送信失敗・画像なし・スマホ・1366×657・画面の大きさの確認）
 node tests/gas_test.js            # Apps Script を偽のスプレッドシートで動かす
 python tests/analysis_test.py     # 閾値が分かっている模擬データで分析を確かめる
 ```
