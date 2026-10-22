@@ -15,7 +15,7 @@ docs/ を一時フォルダに複製し、config.test.js（保存先＝模擬サ
   送信失敗  保存先が応答しないとき、CSV の保存画面に切り替わり、CSV の中身が揃っている
   画像なし  代替表示になり image_loaded=0 が記録される
   端末      スマートフォンの UA では先に進めない
-  画面      1366×657 で顔と回答ボタンが画面内に収まる
+  画面      1366×657 で顔と回答ボタンが画面内に収まる。質問は設定の改行位置で3行
   大きさの確認  13.3型を最大化した程度（数%の縮小）では確認画面を出さない。顔が 5% を超えて縮むウィンドウでは
                 確認画面が出て、最大化して確認し直すと進め、「このまま進む」でも最後まで答えられる
                 （縮めた表示が shrunk に記録される）
@@ -280,6 +280,9 @@ def main():
         btn = page.locator('.choice').nth(1).bounding_box()
         assert box['y'] >= 0 and box['y'] + box['height'] <= 657, box
         assert btn['x'] + btn['width'] <= 1366 and btn['y'] + btn['height'] <= 657, btn
+        q = page.locator('.question')
+        assert q.inner_text() == '対話中の聞き手の表情として、\nこの顔は自然ですか、\n不自然ですか。', q.inner_text()   # 設定の改行位置で折り返す
+        assert q.bounding_box()['height'] < 100, q.bounding_box()                                        # 3行に収まる
         results.append('1366×657：顔 %dx%d px（既定の較正で %.0f mm 幅）、ボタンも画面内' % (box['width'], box['height'], box['width'] / (96 / 25.4)))
         ctx.close()
 
