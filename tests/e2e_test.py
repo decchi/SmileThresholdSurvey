@@ -9,9 +9,10 @@ docs/ を一時フォルダに複製し、config.test.js（保存先＝模擬サ
 本物の Apps Script と同じく、POST には 302 で別URLへ転送して JSON を返す模擬サーバを使う。
 
 確かめること
-  本番      練習2・本試行84（3通り×7段階×2体×2回）・確認問題2。各画像がブロックごとに1回ずつ、連続しない。
-            確認問題は窓の範囲。説明に回答数（全部で88問）が出る。回答は「不自然」=1・「自然」=0
-  範囲確認  ?config=range で本試行60・1ブロック（説明は全部で64問）
+  本番      練習2・本試行84（2通り×7段階×2体×3回）・確認問題3。各画像がブロックごとに1回ずつ、連続しない。
+            確認問題は窓の範囲。説明に回答数（全部で89問）が出る。休憩は2回で「3回のうちN回目」と出る。
+            回答は「不自然」=1・「自然」=0
+  範囲確認  ?config=range で本試行40・1ブロック（説明は全部で45問）
   送信失敗  保存先が応答しないとき、CSV の保存画面に切り替わり、CSV の中身が揃っている
   画像なし  代替表示になり image_loaded=0 が記録される
   端末      スマートフォンの UA では先に進めない
@@ -34,7 +35,7 @@ if '--keep' in sys.argv:
     os.makedirs(KEEP, exist_ok=True)
 
 # 模擬参加者：組み合わせごとの「不自然」の確率（ロジスティック）。閾値（50%点）と傾き
-TRUE = {'smile': (0.85, 18.0), 'eye': (0.75, 18.0), 'both': (0.60, 18.0)}
+TRUE = {'smile': (0.85, 18.0), 'eye': (0.75, 18.0)}
 YES = '不自然'          # config.js の question.yesLabel（記録は response = 1）
 LAST = {}             # 直近の参加者で見えた説明文など
 
@@ -103,9 +104,18 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            return   # ページを閉じて画像の読み込みが打ち切られただけ（テストには関係ない）
+        super().handle_error(request, client_address)
+
+
 def serve(handler, port):
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    httpd = socketserver.ThreadingTCPServer(('127.0.0.1', port), handler)
+    httpd = Server(('127.0.0.1', port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
@@ -138,6 +148,7 @@ def make_site(images):
 def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
     """fit：画面の大きさの確認が出たときの対応（None = 出ないはず、'proceed' = このまま進む）"""
     page.goto(base + 'index.html?' + query)
+    LAST['breaks'] = []
     page.wait_for_selector('text=調査へのご協力のお願い')
     if page.locator('input[type=text]').count():
         page.fill('input[type=text]', 'worker_%04d' % rng.randint(0, 9999))
@@ -165,6 +176,7 @@ def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
                 page.click('text=本番を始める')
                 continue
             if page.locator('text=休憩').count() and page.locator('button:has-text("続ける")').count():
+                LAST['breaks'].append(page.inner_text('.card'))
                 page.click('button:has-text("続ける")')
                 continue
             break
@@ -252,16 +264,18 @@ def main():
             assert not errors, errors
             assert page.locator('.code').inner_text().startswith('SMILET-')
             p = gas.payloads[-1]
-            s = check_payload(p, 84, 2, levels)
+            s = check_payload(p, 84, 3, levels, n_att=3)
             assert s['images_loaded'] == 1, s['images_loaded']
-            assert '回答は全部で88問' in LAST['instructions'] and '本番を86問（前半43問、休憩、後半43問）' in LAST['instructions'], LAST['instructions']
-            assert p['session']['experiment_id'] == 'thr2'
+            assert '回答は全部で89問' in LAST['instructions'] and '本番を87問お答えいただきます。本番は29問ずつ3回に分かれていて' in LAST['instructions'], LAST['instructions']
+            assert len(LAST['breaks']) == 2 and '3回のうち1回目が終わりました' in LAST['breaks'][0] and '3回のうち2回目' in LAST['breaks'][1], LAST['breaks']
+            assert p['session']['experiment_id'] == 'thr3'
             assert {t['response_label'] for t in p['trials'] if t['phase'] == 'main'} <= {'不自然', '自然'}
             assert all((t['response'] == 1) == (t['response_label'] == '不自然') for t in p['trials'])
-            assert sorted({t['combo'] for t in p['trials'] if t['phase'] == 'main'}) == ['both', 'eye', 'smile']
+            assert sorted({t['combo'] for t in p['trials'] if t['phase'] == 'main'}) == ['eye', 'smile']
+            assert [t['stimulus_id'] for t in p['trials'] if t['phase'] == 'practice'] == ['M_eye_040', 'F_smile_040']
             assert s['n_shrunk'] == 0 or s['display_mm_min'] > 0
             assert p['trials'][-1]['response'] in (0, 1)
-            results.append('本番 %d: %d 回答（3通り）、完了コード %s、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
+            results.append('本番 %d: %d 回答（2通り×3回、休憩2回）、完了コード %s、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
                 k + 1, n, s['completion_code'], s['display_mm_min'], s['display_mm_max'], s['n_shrunk'], s['button_order']))
             ctx.close()
         # 同じ乱数の種なら同じ提示順になる
@@ -333,10 +347,11 @@ def main():
         page = ctx.new_page()
         n = run_participant(page, base, 'config=testrange&debug&pid=lab01', random.Random(7))
         p = gas.payloads[-1]
-        s = check_payload(p, 60, 1, [round(0.1 * i, 1) for i in range(1, 11)])
-        assert p['session']['experiment_id'] == 'range2' and s['completion_code'].startswith('SMILER-')
-        assert '回答は全部で64問' in LAST['instructions'] and '本番を62問お答え' in LAST['instructions'], LAST['instructions']
-        results.append('範囲確認: %d 回答（本試行 60・確認問題 2・練習 2）、説明に「全部で64問」' % n)
+        s = check_payload(p, 40, 1, [round(0.1 * i, 1) for i in range(1, 11)], n_att=3)
+        assert p['session']['experiment_id'] == 'range3' and s['completion_code'].startswith('SMILER-')
+        assert '回答は全部で45問' in LAST['instructions'] and '本番を43問お答え' in LAST['instructions'], LAST['instructions']
+        assert not LAST['breaks']
+        results.append('範囲確認: %d 回答（本試行 40・確認問題 3・練習 2）、説明に「全部で45問」' % n)
         ctx.close()
 
         # ---- 送信失敗 → CSV ----

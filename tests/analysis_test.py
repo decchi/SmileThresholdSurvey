@@ -3,10 +3,12 @@
 
     python tests/analysis_test.py
 
-40名分の模擬回答（3通り × 7段階 × 2体 × 2回）を、スプレッドシートの CSV（gas/Code.gs と同じ列）・CSV 提出・raw シートの3形式で作り、
+40名分の模擬回答（2通り × 7段階 × 2体 × 3回）を、スプレッドシートの CSV（gas/Code.gs と同じ列）・CSV 提出・raw シートの3形式で作り、
 分析にかけて次を確かめる。
   - 除外：確認問題の不正解・画像の読み込み失敗・同じIDの2回目・短縮版（demo）が正しく除かれる
-  - 50%点・25%点：真の値の近くに推定され、95%信頼区間が真の値を含む
+  - 多数決（既定）：参加者ごとに各画像3回の答えをまとめた割合から、50%点・25%点が理論値の近くに推定され、
+    95%信頼区間が真の50%点を含む。答えが分かれた画像の数を参加者ごとに数える
+  - 全試行（--per-trial）：50%点・25%点が、模擬参加者の真の曲線の値の近くに推定される
   - 完了コード：参加者IDから計算した値と一致し、食い違いを見つける
 """
 import csv, io, json, math, os, random, re, shutil, subprocess, sys, tempfile
@@ -15,10 +17,24 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'analysis'))
 import threshold as th  # noqa: E402
 
-TRUE = {'smile': 0.85, 'eye': 0.75, 'both': 0.60}   # 50%点（今の設計の3通り）
-EXP = 'thr2'
+TRUE = {'smile': 0.85, 'eye': 0.75}   # 50%点（今の設計の2通り）
+EXP = 'thr3'
 SLOPE = 14.0
+SHIFT_SD = 0.04                        # 参加者ごとのずれ（正規分布）の標準偏差
 LEVELS = [0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+REPS = 3
+
+
+def majority_targets(t, slope=SLOPE, sd=SHIFT_SD):
+    """各画像3回の多数決が「不自然」になる確率（参加者のずれで平均）が 50%・25% になる強さ"""
+    import numpy as np
+    z = np.linspace(-5, 5, 2001)
+    w = np.exp(-z ** 2 / 2)
+    w /= w.sum()
+    xs = np.linspace(0, 1.2, 12001)
+    p = 1 / (1 + np.exp(-slope * (xs[:, None] - t - sd * z[None, :])))
+    m = (3 * p ** 2 - 2 * p ** 3) @ w          # 3回中2回以上「不自然」の確率
+    return float(xs[np.argmin(abs(m - 0.5))]), float(xs[np.argmin(abs(m - 0.25))])
 
 
 def gas_cols():
@@ -34,10 +50,10 @@ def participant(i, rng, attention_ok=True, images_ok=True, mode='main', pid=None
     sid = 's%04d-%d' % (i, rng.randint(0, 1 << 30))
     trials = []
     k = 0
-    for t, (sp, cmb) in enumerate([('M', 'both'), ('F', 'smile')]):
+    for t, (sp, cmb) in enumerate([('M', 'eye'), ('F', 'smile')]):
         trials.append(dict(phase='practice', block=0, stimulus_id='%s_%s_040' % (sp, cmb), response=rng.randint(0, 1)))
-    shift = rng.gauss(0, 0.04)   # 参加者ごとのずれ
-    for b in (1, 2):
+    shift = rng.gauss(0, SHIFT_SD)   # 参加者ごとのずれ
+    for b in range(1, REPS + 1):
         items = [(a, c, lv) for a in ('male', 'female') for c in TRUE for lv in LEVELS]
         rng.shuffle(items)
         for a, c, lv in items:
@@ -46,7 +62,7 @@ def participant(i, rng, attention_ok=True, images_ok=True, mode='main', pid=None
             trials.append(dict(phase='main', block=b, avatar=a, combo=c, level=lv,
                                stimulus_id='%s_%s_%03d' % (a[0].upper(), c, round(lv * 100)),
                                response=y, response_label='不自然' if y else '自然'))
-        trials.insert(len(trials) - 30, dict(phase='attention', block=b, stimulus_id='att%d' % b,
+        trials.insert(len(trials) - 14, dict(phase='attention', block=b, stimulus_id='att%d' % b,
                                              response=1 if attention_ok else 0, correct=1 if attention_ok else 0))
     for j, t in enumerate(trials):
         t.update(session_id=sid, participant_id=pid, experiment_id=EXP, mode=mode, trial_index=j,
@@ -106,7 +122,8 @@ def main():
         r = subprocess.run(cmd, capture_output=True, text=True)
         print(r.stdout)
         assert r.returncode == 0, r.stderr
-        assert '「不自然」の割合' in r.stdout and '口角だけ・＋目・＋両方' in r.stdout, r.stdout
+        assert '「不自然」の割合' in r.stdout and '組み合わせ：口角だけ・＋目' in r.stdout, r.stdout
+        assert '各画像 3 回の答えを参加者ごとに多数決でまとめ' in r.stdout, r.stdout
 
         import pandas as pd
         parts = pd.read_csv(os.path.join(out, 'participants.csv'), encoding='utf-8-sig')
@@ -114,13 +131,28 @@ def main():
         assert parts['included'].sum() == 41, parts['included'].sum()   # 40 + コード不一致の1名
         reasons = parts.loc[~parts['included'], 'exclude_reason'].tolist()
         assert any('確認問題' in x for x in reasons) and any('画像' in x for x in reasons) and any('2回目' in x for x in reasons)
+        inc = parts[parts['included']]
+        assert (inc['n_split'] > 0).all() and (inc['n_split'] <= 28).all(), inc['n_split'].describe()   # 28枚のうち分かれた数
         res = pd.read_csv(os.path.join(out, 'thresholds.csv'), encoding='utf-8-sig')
+        assert (res['unit'] == '多数決').all() and (res.loc[res['avatar'] == 'all', 'n_obs'] == 41 * 2 * 7).all(), res[['unit', 'n_obs']]
         for c, t in TRUE.items():
             row = res[(res['combo'] == c) & (res['avatar'] == 'all')].iloc[0]
-            assert abs(row['x50'] - t) < 0.04, (c, row['x50'], t)
+            t50, t25 = majority_targets(t)
+            assert abs(row['x50'] - t50) < 0.04, (c, row['x50'], t50)
             assert row['x50_lo'] <= t + 0.02 and row['x50_hi'] >= t - 0.02, (c, row['x50_lo'], row['x50_hi'])
-            t25 = t + math.log(1 / 3) / SLOPE
             assert abs(row['x25'] - t25) < 0.05, (c, row['x25'], t25)
+
+        # 全試行（多数決なし）：真の曲線の 50%点・25%点の近く
+        out2 = os.path.join(tmp, 'results_trial')
+        r2 = subprocess.run(cmd[:cmd.index('--out')] + ['--out', out2, '--boot', '200', '--per-trial', '--no-plot'],
+                            capture_output=True, text=True)
+        assert r2.returncode == 0, r2.stderr
+        res2 = pd.read_csv(os.path.join(out2, 'thresholds.csv'), encoding='utf-8-sig')
+        assert (res2['unit'] == '試行').all()
+        for c, t in TRUE.items():
+            row = res2[(res2['combo'] == c) & (res2['avatar'] == 'all')].iloc[0]
+            assert abs(row['x50'] - t) < 0.04, (c, row['x50'], t)
+            assert abs(row['x25'] - (t + math.log(1 / 3) / SLOPE)) < 0.05, (c, row['x25'])
         cc = pd.read_csv(os.path.join(out, 'code_check.csv'), encoding='utf-8-sig')
         assert cc['code_ok'].tolist() == [True, False, True] and cc['has_response'].tolist() == [True, True, False]
         assert os.path.exists(os.path.join(out, 'psychometric.png')) and os.path.exists(os.path.join(out, 'psychometric_by_avatar.png'))
@@ -128,7 +160,7 @@ def main():
             dst = os.path.abspath(sys.argv[sys.argv.index('--keep') + 1])
             shutil.copytree(out, dst, dirs_exist_ok=True)
         assert sorted(res['combo'].unique()) == sorted(TRUE), res['combo'].unique()
-        print('OK  analysis: 除外 3 名・対象外 1 名を正しく扱い、3通りの 50%点・25%点を真の値の近くに回収（信頼区間も真の値を含む）、完了コードの照合も一致')
+        print('OK  analysis: 除外 3 名・対象外 1 名を正しく扱い、2通りの 50%点・25%点を多数決（各画像3回）と全試行の両方で理論値の近くに回収（信頼区間も真の値を含む）、完了コードの照合も一致')
     finally:
         shutil.rmtree(tmp)
 
