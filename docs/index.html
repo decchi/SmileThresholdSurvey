@@ -71,7 +71,8 @@ textarea{width:100%;min-height:90px}
 /* 違和感の閾値の測定（恒常法）── 回答画面
  * 流れ：環境の確認 → 同意 → 画面較正 →（顔が収まらないウィンドウなら、大きさの確認）
  *       → 説明（画像の読み込み）→ 練習 → 本試行（ブロック間に休憩）
- *       → 属性 → 送信（Apps Script）→ 完了コード。送信できないときは回答を CSV で保存させる。
+ *       → 属性 → 送信（Apps Script）→ 完了の画面（完了コードは showCompletionCode で表示／非表示）。
+ *       送信できないときは回答を CSV で保存させる。
  * 設定は config.js（?config=<名前> で config.<名前>.js を重ねる）。
  * URL パラメータ：pid（参加者ID）, config, demo（短縮版）, nocheck（端末の確認を省く）,
  *                 seed（提示順の乱数の種）, order（yes_left / yes_right）, debug
@@ -604,18 +605,20 @@ textarea{width:100%;min-height:90px}
 
   function screenDone(session, saved) {
     protect(!saved);
+    var showCode = cfg.showCompletionCode !== false;   // 出さない設定でも、コードは completion_code に記録される
     var code = h('div', { class: 'code', text: session.completion_code });
     var parts = [h('h1', { text: 'ご協力ありがとうございました' })];
     if (saved) {
-      parts.push(h('p', { text: '回答を受け付けました。次の完了コードを、募集ページの入力欄にご記入ください。' }), code);
+      if (showCode) parts.push(h('p', { text: '回答を受け付けました。次の完了コードを、募集ページの入力欄にご記入ください。' }), code);
+      else parts.push(h('p', { text: '回答を受け付けました。このページは閉じてかまいません。' }));
       if (S.mode === 'demo') parts.push(h('p', { class: 'note', text: '（短縮版の動作確認です。本番の回答としては扱いません。）' }));
     } else {
       var dl = h('button', { class: 'btn', type: 'button', text: '回答ファイルを保存する' });
       dl.addEventListener('click', function () { downloadCSV(session); protect(false); });
       parts.push(
         h('p', { text: cfg.submitUrl ? '回答を自動で送信できませんでした。お手数ですが、下のボタンで回答ファイルを保存し、募集ページの指示に従ってご提出ください。' : '下のボタンで回答ファイルを保存し、指示に従ってご提出ください。' }),
-        h('div', { class: 'row' }, dl),
-        h('p', { style: 'margin-top:20px', text: '完了コード：' }), code);
+        h('div', { class: 'row' }, dl));
+      if (showCode) parts.push(h('p', { style: 'margin-top:20px', text: '完了コード：' }), code);
     }
     show(page.apply(null, parts));
   }

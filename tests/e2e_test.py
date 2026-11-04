@@ -37,6 +37,7 @@ if '--keep' in sys.argv:
 # 模擬参加者：組み合わせごとの「不自然」の確率（ロジスティック）。閾値（50%点）と傾き
 TRUE = {'smile': (0.85, 18.0), 'eye': (0.75, 18.0)}
 YES = '不自然'          # config.js の question.yesLabel（記録は response = 1）
+AGES = ['10代', '20代', '30代', '40代', '50代', '60代', '答えない']   # config.js の年代の選択肢
 LAST = {}             # 直近の参加者で見えた説明文など
 
 
@@ -199,8 +200,8 @@ def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
         n += 1
         page.wait_for_function("(k) => !window.__SURVEY__.current || window.__SURVEY__.trials.length >= k", arg=n, timeout=30000)
     page.wait_for_selector('text=最後に、あなたご自身について')
-    page.fill('input[type=number]', str(rng.randint(20, 60)))
-    for name, opt in [('sex', rng.choice(['男性', '女性'])), ('vr_experience', 'ない')]:
+    LAST['demographics'] = page.inner_text('.card')
+    for name, opt in [('age', rng.choice(AGES)), ('sex', rng.choice(['男性', '女性']))]:
         page.check('input[name=%s][value="%s"]' % (name, opt))
     page.fill('textarea', '=HYPERLINK("x") テスト')
     page.click('text=回答を送信する')
@@ -262,7 +263,7 @@ def main():
             rng = random.Random(100 + k)
             n = run_participant(page, base, 'config=test&debug&seed=%d' % (11 + k), rng, shot=shot)
             assert not errors, errors
-            assert page.locator('.code').inner_text().startswith('SMILET-')
+            assert page.locator('.code').count() == 0 and 'このページは閉じてかまいません' in page.inner_text('.card')   # 完了コードは出さない
             p = gas.payloads[-1]
             s = check_payload(p, 84, 3, levels, n_att=3)
             assert s['images_loaded'] == 1, s['images_loaded']
@@ -273,9 +274,11 @@ def main():
             assert all((t['response'] == 1) == (t['response_label'] == '不自然') for t in p['trials'])
             assert sorted({t['combo'] for t in p['trials'] if t['phase'] == 'main'}) == ['eye', 'smile']
             assert [t['stimulus_id'] for t in p['trials'] if t['phase'] == 'practice'] == ['M_eye_040', 'F_smile_040']
+            assert s['age'] in AGES and s.get('vr_experience', '') == '', (s['age'], s.get('vr_experience'))
+            assert '年代をお答えください' in LAST['demographics'] and 'VR' not in LAST['demographics'], LAST['demographics']
             assert s['n_shrunk'] == 0 or s['display_mm_min'] > 0
             assert p['trials'][-1]['response'] in (0, 1)
-            results.append('本番 %d: %d 回答（2通り×3回、休憩2回）、完了コード %s、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
+            results.append('本番 %d: %d 回答（2通り×3回、休憩2回）、完了コードは記録のみ（%s）、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
                 k + 1, n, s['completion_code'], s['display_mm_min'], s['display_mm_max'], s['n_shrunk'], s['button_order']))
             ctx.close()
         # 同じ乱数の種なら同じ提示順になる
@@ -368,6 +371,7 @@ def main():
         rows = list(csv.DictReader(io.StringIO(text)))
         assert len(rows) == run_participant_demo and rows[0]['participant_id'] == 'fail01'
         assert rows[0]['completion_code'].startswith('SMILET-') and rows[0]['mode'] == 'demo'
+        assert page.locator('.code').count() == 0                     # 送信できないときも完了コードは出さない
         assert len(gas.payloads) == before
         results.append('送信失敗: CSV 保存に切り替わり、%d 行（短縮版）を保存' % len(rows))
         if KEEP:

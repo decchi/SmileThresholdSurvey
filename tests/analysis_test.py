@@ -74,7 +74,7 @@ def participant(i, rng, attention_ok=True, images_ok=True, mode='main', pid=None
                    completion_code=('SMILET-00000000' if bad_code else code), n_trials_main=84,
                    attention_n=len(att), attention_correct=sum(t['correct'] for t in att),
                    attention_pass=1 if attention_ok else 0, images_loaded=1 if images_ok else 0,
-                   free_comment='=SUM(1)' if i == 0 else '', age=30, sex='女性')
+                   free_comment='=SUM(1)' if i == 0 else '', age='30代', sex='女性')
     return {'session': session, 'trials': trials}
 
 

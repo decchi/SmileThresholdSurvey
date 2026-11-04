@@ -82,8 +82,9 @@ Chrome の操作には、paper-research スキルの `cdp.py` があればそれ
 GitHub の **Settings > Pages** で、Source を「Deploy from a branch」、Branch を `main`、フォルダを `/docs` にする。
 公開URL：<https://decchi.github.io/SmileThresholdSurvey/>
 
-募集ページには、公開URLと、完了コード（本番は `SMILET-`、範囲確認は `SMILER-` で始まる）の記入欄を用意する。
-参加者IDは同意画面で入力してもらう（URL に `?pid=<ID>` を付ければ入力欄を省ける）。完了コードは参加者IDから決まるので、`analysis/threshold.py --check-codes` で照合できる。
+募集ページには公開URLを載せる。参加者IDは同意画面で入力してもらう（URL に `?pid=<ID>` を付ければ入力欄を省ける）。
+完了の画面に完了コードは出さない（`config.js` の `showCompletionCode: false`、2026-11-05）。コード自体は参加者IDから決まる値として `sessions` の `completion_code` に記録される。
+出す設定（`true`）に戻せば、募集ページに記入欄を用意して、`analysis/threshold.py --check-codes` で照合できる（本番は `SMILET-`、範囲確認は `SMILER-` で始まる）。
 
 ## 4. 実施前の確認
 
@@ -134,7 +135,7 @@ python analysis/threshold.py --responses responses.csv --sessions sessions.csv -
 
 `responses`（試行ごと）：`phase`（practice / main / attention）、`block`、`stimulus_id`・`avatar`・`combo`・`level`・`smile`・`eye`・`lip`、`response`（1 = 不自然、0 = 自然。旧版では 1 = 違和感あり）、`correct`（確認問題のみ）、`key`（F / J / クリック）、`rt_ms`（顔の提示から回答まで）、`display_mm`（実際に表示した顔の幅）、`image_loaded` など。
 
-`sessions`（参加者ごと）：確認問題の結果、画面較正（`px_per_mm`）、表示幅、所要時間、ボタンの左右、乱数の種、年齢・性別・VR経験・自由記述、完了コードなど。
+`sessions`（参加者ごと）：確認問題の結果、画面較正（`px_per_mm`）、表示幅、所要時間、ボタンの左右、乱数の種、年代（10代〜60代・答えない）・性別・自由記述、完了コードなど。`vr_experience` の列は残してあるが、2026-11-05 から尋ねていないので空欄。
 
 ## 9. テスト
 
