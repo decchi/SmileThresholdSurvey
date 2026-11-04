@@ -151,6 +151,7 @@ def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
     page.goto(base + 'index.html?' + query)
     LAST['breaks'] = []
     page.wait_for_selector('text=調査へのご協力のお願い')
+    LAST['consent'] = page.inner_text('.card')
     if page.locator('input[type=text]').count():
         page.fill('input[type=text]', 'worker_%04d' % rng.randint(0, 9999))
     page.check('input[type=checkbox]')
@@ -276,6 +277,7 @@ def main():
             assert [t['stimulus_id'] for t in p['trials'] if t['phase'] == 'practice'] == ['M_eye_040', 'F_smile_040']
             assert s['age'] in AGES and s.get('vr_experience', '') == '', (s['age'], s.get('vr_experience'))
             assert '年代をお答えください' in LAST['demographics'] and 'VR' not in LAST['demographics'], LAST['demographics']
+            assert 'このURLを送付した連絡先までお問い合わせください' in LAST['consent'] and '募集ページ' not in LAST['consent'].replace('募集ページのユーザーID', ''), LAST['consent']
             assert s['n_shrunk'] == 0 or s['display_mm_min'] > 0
             assert p['trials'][-1]['response'] in (0, 1)
             results.append('本番 %d: %d 回答（2通り×3回、休憩2回）、完了コードは記録のみ（%s）、表示幅 %.1f〜%.1f mm、縮小 %d 回、ボタン順 %s' % (
@@ -372,6 +374,7 @@ def main():
         assert len(rows) == run_participant_demo and rows[0]['participant_id'] == 'fail01'
         assert rows[0]['completion_code'].startswith('SMILET-') and rows[0]['mode'] == 'demo'
         assert page.locator('.code').count() == 0                     # 送信できないときも完了コードは出さない
+        assert 'このURLを送付した連絡先までお送りください' in page.inner_text('.card'), page.inner_text('.card')
         assert len(gas.payloads) == before
         results.append('送信失敗: CSV 保存に切り替わり、%d 行（短縮版）を保存' % len(rows))
         if KEEP:

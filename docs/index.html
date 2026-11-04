@@ -603,6 +603,8 @@ textarea{width:100%;min-height:90px}
     document.body.appendChild(a); a.click(); a.remove();
   }
 
+  function contactName() { return (cfg && cfg.contact) || '募集ページ記載の連絡先'; }   // 問い合わせ先の言い方（config.js の contact）
+
   function screenDone(session, saved) {
     protect(!saved);
     var showCode = cfg.showCompletionCode !== false;   // 出さない設定でも、コードは completion_code に記録される
@@ -616,7 +618,7 @@ textarea{width:100%;min-height:90px}
       var dl = h('button', { class: 'btn', type: 'button', text: '回答ファイルを保存する' });
       dl.addEventListener('click', function () { downloadCSV(session); protect(false); });
       parts.push(
-        h('p', { text: cfg.submitUrl ? '回答を自動で送信できませんでした。お手数ですが、下のボタンで回答ファイルを保存し、募集ページの指示に従ってご提出ください。' : '下のボタンで回答ファイルを保存し、指示に従ってご提出ください。' }),
+        h('p', { text: (cfg.submitUrl ? '回答を自動で送信できませんでした。お手数ですが、' : '') + '下のボタンで回答ファイルを保存し、' + contactName() + 'までお送りください。' }),
         h('div', { class: 'row' }, dl));
       if (showCode) parts.push(h('p', { style: 'margin-top:20px', text: '完了コード：' }), code);
     }
@@ -684,7 +686,7 @@ textarea{width:100%;min-height:90px}
   main().catch(function (e) {
     protect(false);
     show(page(h('h1', { text: 'エラーが発生しました' }), h('p', { class: 'warn', text: String(e && e.message || e) }),
-      h('p', { class: 'note', text: 'お手数ですが、募集ページの連絡先までお知らせください。' })));
+      h('p', { class: 'note', text: 'お手数ですが、' + contactName() + 'までお知らせください。' })));
     if (window.console) console.error(e);
   });
 })();
