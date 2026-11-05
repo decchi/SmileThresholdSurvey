@@ -1,7 +1,7 @@
 # SmileThresholdSurvey
 
 静止画による笑顔の**違和感の閾値**の測定（恒常法・Webアンケート）。
-アバタの笑顔について、口角だけ・＋目の2通りの顔を見せ、対話中の聞き手の表情として「不自然」と判断され始める強さを求める。
+アバタの笑顔について、口角だけ・＋目の2通りの顔を見せ、対話中の聞き手の表情として不自然と判断され始める強さを求める（質問は「この顔は自然だと思いますか」、答えは「はい／いいえ」）。
 結果は笑顔混合のパラメータ（混合の式・混合比率 α の上限）に使う。
 設計と未決事項は [DESIGN.md](DESIGN.md)。
 
@@ -93,13 +93,13 @@ GitHub の **Settings > Pages** で、Source を「Deploy from a branch」、Bra
 - [ ] `?demo` の短縮版が動く（`mode = demo` で記録され、分析では除かれる）
 - [ ] 手元のノートPCで、顔と回答ボタンがスクロールせずに収まる（ウィンドウを最大化すれば「画面の大きさの確認」が出ない）
 - [ ] 画面較正で、カードと四角形が重なる（複数の端末で）
-- [ ] 質問文・説明文の文面を確定し、`config.js` の【仮】を外す（DESIGN.md 未決事項1。枠組みの「対話中の聞き手の表情として自然／不自然」は決定）
+- [x] 質問文・説明文の文面を確定（2026-11-05。DESIGN.md「質問」）
 - [ ] 旧版（`thr1`・`range`・`thr2`・`range2`）のテスト回答は分析の対象外になるが、紛らわしければスプレッドシートから消す
 - [ ] 研究室内で数名に見せ、刺激が意図どおり書き出されているかを点検する
 
 ## 5. 範囲確認
 
-公開URLに `?config=range` を付けて開く（40試行。回答は全部で45問、約5分）。集計は `--experiment range3`。
+公開URLに `?config=range` を付けて開く（40試行。回答は全部で45問、約5分）。集計は `--experiment range4`。
 
 ## 6. URL パラメータ
 
@@ -110,7 +110,7 @@ GitHub の **Settings > Pages** で、Source を「Deploy from a branch」、Bra
 | `?demo` | 短縮版（練習1・本試行6・確認問題1）。動作確認用で、`mode = demo` として記録 |
 | `?nocheck` | スマートフォン判定を素通りする（動作確認用） |
 | `?seed=<数>` | 提示順の乱数の種を固定する（既定はランダム。種は記録される） |
-| `?order=yes_left` / `yes_right` | 「不自然」ボタンの左右を固定する（既定は参加者IDで振り分け） |
+| `?order=yes_left` / `yes_right` | 「いいえ」（記録 1）のボタンの左右を固定する（既定は参加者IDで振り分け） |
 | `?debug` | 動作確認用に内部状態を `window.__SURVEY__` に出す |
 
 ## 7. 集計
@@ -122,18 +122,18 @@ python analysis/threshold.py --responses responses.csv --sessions sessions.csv -
 # CSV で提出された回答があれば --csv-dir <フォルダ> を追加。raw シートからの復元は --raw raw.csv
 ```
 
-対象は本番の `thr3`（既定）。範囲確認は `--experiment range3`。旧版の `thr1`・`range`・`thr2`・`range2` は混ぜない。
+対象は本番の `thr4`（既定）。範囲確認は `--experiment range4`。旧版の `thr1`〜`thr3`・`range`〜`range3` は混ぜない。
 
-本番は各画像を3回見せるので、参加者ごとに各画像の3回の答えを多数決でまとめてから、強さ別の「不自然」の割合を求める（`participants.csv` の `n_split` は答えが分かれた画像の数）。
+本番は各画像を3回見せるので、参加者ごとに各画像の3回の答えを多数決でまとめてから、強さ別の「いいえ」（自然だと思わない）の割合を求める（`participants.csv` の `n_split` は答えが分かれた画像の数）。
 多数決をとらずに全試行で求めた値も見たいときは `--per-trial` を付ける（参考）。
 
 出力は `results/` に、`thresholds.csv`（組み合わせ × {全体・男性・女性} の 50%点・25%点と 95%信頼区間）、`proportions.csv`、`participants.csv`（除外の理由・印・完了コード）、`psychometric.png`・`psychometric_by_avatar.png`、`summary.txt`。
 
-除外するのは、確認問題の不正解・画像の読み込み失敗・同じ参加者IDの2回目以降だけ。反応の速すぎや全試行同じ答えは印を付けるだけにしてある（基準はデータを見る前に決める。DESIGN.md 未決事項4）。
+除外するのは、確認問題の不正解・画像の読み込み失敗・同じ参加者IDの2回目以降だけ。反応の速すぎや全試行同じ答えは印を付けるだけにしてある（基準はデータを見る前に決める。DESIGN.md 未決事項3）。
 
 ## 8. 記録される項目
 
-`responses`（試行ごと）：`phase`（practice / main / attention）、`block`、`stimulus_id`・`avatar`・`combo`・`level`・`smile`・`eye`・`lip`、`response`（1 = 不自然、0 = 自然。旧版では 1 = 違和感あり）、`correct`（確認問題のみ）、`key`（F / J / クリック）、`rt_ms`（顔の提示から回答まで）、`display_mm`（実際に表示した顔の幅）、`image_loaded` など。
+`responses`（試行ごと）：`phase`（practice / main / attention）、`block`、`stimulus_id`・`avatar`・`combo`・`level`・`smile`・`eye`・`lip`、`response`（1 = いいえ（自然だと思わない）、0 = はい。thr3 までは 1 = 不自然、thr1 では 1 = 違和感あり）、`correct`（確認問題のみ）、`key`（click_left / click_right。thr3 までは F / J もあった）、`rt_ms`（顔の提示から回答まで）、`display_mm`（実際に表示した顔の幅）、`image_loaded` など。
 
 `sessions`（参加者ごと）：確認問題の結果、画面較正（`px_per_mm`）、表示幅、所要時間、ボタンの左右、乱数の種、年代（10代〜60代・答えない）・性別・自由記述、完了コードなど。`vr_experience` の列は残してあるが、2026-11-05 から尋ねていないので空欄。
 

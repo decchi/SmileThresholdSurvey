@@ -4,7 +4,7 @@
     python analysis/threshold.py --responses responses.csv --sessions sessions.csv
     python analysis/threshold.py --csv-dir 提出されたCSVのフォルダ          # 送信できず CSV で提出された分
     python analysis/threshold.py --raw raw.csv                            # raw シートからの復元
-    python analysis/threshold.py ... --experiment range3                  # 範囲確認の集計
+    python analysis/threshold.py ... --experiment range4                  # 範囲確認の集計
     python analysis/threshold.py ... --per-trial                         # 多数決をとらず全試行を使う（参考）
     python analysis/threshold.py ... --check-codes platform.csv           # 完了コードの照合
 
@@ -12,21 +12,23 @@
 複数の入力を同時に渡すと、session_id の重複を除いてまとめる。
 
 手順
-  1. 対象の実験（experiment_id。既定は本番の thr3）と mode = main の回答だけを使う（短縮版 demo は除く）
-     ※ 前の版：thr1・range（4通り・「違和感あり／なし」）、thr2・range2（3通り・各画像2回）
+  1. 対象の実験（experiment_id。既定は本番の thr4）と mode = main の回答だけを使う（短縮版 demo は除く）
+     ※ 前の版：thr1・range（4通り・「違和感あり／なし」）、thr2・range2（3通り・各画像2回）、
+       thr3・range3（2通り・「自然／不自然」の2択）
   2. 除外：確認問題の不正解（データを見る前に決めた基準）、画像の読み込み失敗、同じ参加者IDの2回目以降
      ※ 反応の速すぎ・全試行同じ答えなどは participants.csv に印を付けるだけで、除外はしない
-  3. 参加者ごとに、各画像の答えを多数決でまとめる（本番は各画像3回。「不自然」が過半数なら 1、そうでなければ 0）
+  3. 参加者ごとに、各画像の答えを多数決でまとめる（本番は各画像3回。回答 1 が過半数なら 1、そうでなければ 0）
      ※ 同数は試行が欠けたときだけ起こり、その画像は除く。--per-trial で多数決をとらず全試行を使う（参考）
   4. 見せた組み合わせ（今は口角だけ・＋目の2通り）ごとに、強さ別の回答 1 の割合を求める
-     （回答 1 は「不自然」。旧版では「違和感あり」。2体をまとめた値と、体ごとの値）
+     （回答 1 は、質問「…この顔は自然だと思いますか。」への「いいえ」。thr3 までは「不自然」、thr1 では「違和感あり」。
+      2体をまとめた値と、体ごとの値）
   5. ロジスティック関数（S字の曲線）を最尤法で当てはめ、50%点と25%点を求める
-     （多数決のときは「不自然と判断した割合」が 50%・25% になる強さ）
+     （多数決のときは、多数決の答えが回答 1 になった割合が 50%・25% になる強さ）
   6. 参加者を単位にしたブートストラップ（既定 2000 回）で 95% 信頼区間を付ける
 
 出力（--out、既定 results/）
   thresholds.csv     組み合わせ × {全体, 男性, 女性} の 50%点・25%点と信頼区間
-  proportions.csv    強さ別の判断の数（多数決の数。--per-trial なら試行の数）・回答 1（不自然）の数・割合
+  proportions.csv    強さ別の判断の数（多数決の数。--per-trial なら試行の数）・回答 1（いいえ）の数・割合
   participants.csv   参加者ごとの確認問題・除外の理由・印・答えが分かれた画像の数・完了コードの照合
   psychometric.png   組み合わせごとの曲線（2体をまとめた値）
   psychometric_by_avatar.png  体ごとの曲線
@@ -45,9 +47,11 @@ import pandas as pd
 
 COMBOS_ALL = [('smile', '口角だけ'), ('eye', '＋目'), ('lip', '＋上唇'), ('both', '＋両方')]   # 並べる順と表示名
 AVATARS = [('all', '全体'), ('male', '男性'), ('female', '女性')]
-CODE_PREFIX = {'thr3': 'SMILET-', 'range3': 'SMILER-', 'thr2': 'SMILET-', 'range2': 'SMILER-',
-               'thr1': 'SMILET-', 'range': 'SMILER-'}
+CODE_PREFIX = {'thr4': 'SMILET-', 'range4': 'SMILER-', 'thr3': 'SMILET-', 'range3': 'SMILER-',
+               'thr2': 'SMILET-', 'range2': 'SMILER-', 'thr1': 'SMILET-', 'range': 'SMILER-'}
 CODE_SALT = '261011'
+# 回答 1 の表示（response_label から決める）。thr4 からは質問「…この顔は自然だと思いますか。」への「いいえ」
+LABEL_TEXT = {'いいえ': '「いいえ」（自然だと思わない）'}
 LOGIT25 = math.log(0.25 / 0.75)
 
 
@@ -179,7 +183,7 @@ def main():
     ap.add_argument('--csv-dir')
     ap.add_argument('--raw')
     ap.add_argument('--json', help='模擬回答（tests/e2e_test.py --keep の payloads.json）')
-    ap.add_argument('--experiment', default='thr3')
+    ap.add_argument('--experiment', default='thr4')
     ap.add_argument('--per-trial', action='store_true', help='多数決をとらず、全試行をそのまま使う（参考）')
     ap.add_argument('--out', default='results')
     ap.add_argument('--boot', type=int, default=2000)
@@ -232,7 +236,7 @@ def main():
     P['expected_code'] = [expected_code(pid, exp) for pid in P['participant_id']]
     if 'completion_code' in P.columns:
         P['code_ok'] = P['completion_code'] == P['expected_code']
-    # 参加者 × 画像ごとの答え（提示した回数と「不自然」の数）。答えが分かれた画像の数も数える
+    # 参加者 × 画像ごとの答え（提示した回数と回答 1 の数）。答えが分かれた画像の数も数える
     G = main_t.groupby(['session_id', 'stimulus_id', 'avatar', 'combo', 'level'])['response'].agg(['size', 'sum']).reset_index()
     G['split'] = (G['sum'] > 0) & (G['sum'] < G['size'])
     P['n_split'] = G.groupby('session_id')['split'].sum().reindex(P.index).fillna(0).astype(int)
@@ -283,6 +287,7 @@ def main():
         lab = d.loc[d['response'] == 1, 'response_label'].dropna().astype(str)
         if len(lab):
             yes_label = lab.value_counts().index[0]
+    yes_text = LABEL_TEXT.get(yes_label, '「%s」' % yes_label)
 
     # ---- 当てはめとブートストラップ ----
     # 参加者 × 体 × 組み合わせ × 強さ の集計表（ブートストラップで足し合わせる）
@@ -340,7 +345,7 @@ def main():
     # ---- 要約 ----
     how = ('各画像 %d 回の答えを参加者ごとに多数決でまとめ、' % reps) if unit == '多数決' else '全試行をそのまま使い、'
     lines = ['実験 %s：参加者 %d 名のうち %d 名を分析（除外 %d 名）' % (exp, len(P), n_p, len(P) - n_p),
-             '閾値は、%s「%s」の割合から求めた値。組み合わせ：%s' % (how, yes_label, '・'.join(l for _, l in COMBOS)),
+             '閾値は、%s%sの割合から求めた値。組み合わせ：%s' % (how, yes_text, '・'.join(l for _, l in COMBOS)),
              '答えが分かれた画像：参加者 × 画像の %.1f%%%s' % (100 * split_rate,
                                                        '（同数のため除いた画像 %d）' % n_ties if n_ties else '')]
     for reason, k in P.loc[~P['included'], 'exclude_reason'].value_counts().items():
@@ -374,7 +379,7 @@ def main():
             len(sub), int(sub['code_ok'].sum()), int(sub['has_response'].sum())))
 
     if not args.no_plot:
-        plot(prop, res, fits, levels, n_p, args.out, exp, COMBOS, yes_label, unit)
+        plot(prop, res, fits, levels, n_p, args.out, exp, COMBOS, yes_text, unit)
 
 
 # ---------------------------------------------------------------- 図
@@ -399,7 +404,7 @@ def setup_mpl():
     return plt
 
 
-def plot(prop, res, fits, levels, n_p, out, exp, combos, yes_label, unit='多数決'):
+def plot(prop, res, fits, levels, n_p, out, exp, combos, yes_text, unit='多数決'):
     plt = setup_mpl()
     xs = np.linspace(0, 1.05, 300)
     nc = len(combos)
@@ -444,7 +449,7 @@ def plot(prop, res, fits, levels, n_p, out, exp, combos, yes_label, unit='多数
         for ax in axes[-1]:
             ax.set_xlabel('強さ（シェイプの値）')
         for ax in axes[:, 0]:
-            ax.set_ylabel('「%s」の割合%s' % (yes_label, '（多数決）' if unit == '多数決' else ''))
+            ax.set_ylabel('%sの割合%s' % (yes_text, '（多数決）' if unit == '多数決' else ''))
         how = '各画像の答えは参加者ごとの多数決。' if unit == '多数決' else '全試行。'
         sub = how + ('2体をまとめた値。縦線は50%点・25%点、横の線は95%信頼区間' if which == 'all' else '体ごとの値（●男性、□女性）')
         fig.suptitle('違和感の閾値（%s、%d 名）' % (exp, n_p), x=0.07, y=1 - 0.1 / H, ha='left', va='top',

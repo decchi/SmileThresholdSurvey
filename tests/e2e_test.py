@@ -11,12 +11,15 @@ docs/ を一時フォルダに複製し、config.test.js（保存先＝模擬サ
 確かめること
   本番      練習2・本試行84（2通り×7段階×2体×3回）・確認問題3。各画像がブロックごとに1回ずつ、連続しない。
             確認問題は窓の範囲。説明に回答数（全部で89問）が出る。休憩は2回で「3回のうちN回目」と出る。
-            回答は「不自然」=1・「自然」=0
+            回答は「いいえ」=1・「はい」=0。説明に前提（VR 空間・あなたの話を聞いている相手）が出て、「不自然」の例は出ない
   範囲確認  ?config=range で本試行40・1ブロック（説明は全部で45問）
   送信失敗  保存先が応答しないとき、CSV の保存画面に切り替わり、CSV の中身が揃っている
   画像なし  代替表示になり image_loaded=0 が記録される
   端末      スマートフォンの UA では先に進めない
-  画面      1366×657 で顔と回答ボタンが画面内に収まる。質問は設定の改行位置で3行
+  画面の準備  同意の次、カードで測る前に、最大化と、回答が終わるまで大きさ・ズームを変えないことを案内する
+  待ち時間  回答したらすぐ次の顔を出し（空白・注視点なし）、顔を出してから minViewMs（本物の設定）はボタンを押せない
+  回答の方法  マウスのクリックだけ。F・J・Tab・Enter・スペースでは答えられない。ボタンにキーの表示が無い
+  画面      1366×657 で顔と回答ボタンが画面内に収まる。質問は設定の改行位置で2行
   大きさの確認  13.3型を最大化した程度（数%の縮小）では確認画面を出さない。顔が 5% を超えて縮むウィンドウでは
                 確認画面が出て、最大化して確認し直すと進め、「このまま進む」でも最後まで答えられる
                 （縮めた表示が shrunk に記録される）
@@ -34,9 +37,9 @@ if '--keep' in sys.argv:
     KEEP = os.path.abspath(sys.argv[sys.argv.index('--keep') + 1])
     os.makedirs(KEEP, exist_ok=True)
 
-# 模擬参加者：組み合わせごとの「不自然」の確率（ロジスティック）。閾値（50%点）と傾き
+# 模擬参加者：組み合わせごとの「いいえ」（自然だと思わない）の確率（ロジスティック）。閾値（50%点）と傾き
 TRUE = {'smile': (0.85, 18.0), 'eye': (0.75, 18.0)}
-YES = '不自然'          # config.js の question.yesLabel（記録は response = 1）
+YES = 'いいえ'          # config.js の question.yesLabel（記録は response = 1）
 AGES = ['10代', '20代', '30代', '40代', '50代', '60代', '答えない']   # config.js の年代の選択肢
 LAST = {}             # 直近の参加者で見えた説明文など
 
@@ -127,7 +130,9 @@ def make_site(images):
     shutil.copytree(DOCS, site)
     with open(os.path.join(site, 'config.test.js'), 'w', encoding='utf-8') as f:
         f.write('window.SURVEY_CONFIG_OVERLAY = { submitUrl: "http://127.0.0.1:8766/exec",'
-                ' timing: { itiMs: 20, fixationMs: 20, minViewMs: 20 } };\n')
+                ' timing: { itiMs: 0, fixationMs: 0, minViewMs: 20 } };\n')
+    with open(os.path.join(site, 'config.testlock.js'), 'w', encoding='utf-8') as f:   # 待ち時間は本物の設定のまま
+        f.write('window.SURVEY_CONFIG_OVERLAY = { submitUrl: "http://127.0.0.1:8766/exec" };\n')
     with open(os.path.join(site, 'config.testrange.js'), 'w', encoding='utf-8') as f:
         src = open(os.path.join(DOCS, 'config.range.js'), encoding='utf-8').read()
         f.write(src + '\nwindow.SURVEY_CONFIG_OVERLAY.submitUrl = "http://127.0.0.1:8766/exec";'
@@ -146,6 +151,13 @@ def make_site(images):
     return tmp, site
 
 
+def pass_prepare(page):
+    """同意の次、カードで測る前の「画面の準備」（最大化と、その後に大きさを変えない案内）"""
+    page.wait_for_selector('h1:has-text("画面の準備")')
+    LAST['prepare'] = page.inner_text('.card')
+    page.click('button:has-text("次へ")')
+
+
 def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
     """fit：画面の大きさの確認が出たときの対応（None = 出ないはず、'proceed' = このまま進む）"""
     page.goto(base + 'index.html?' + query)
@@ -156,6 +168,7 @@ def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
         page.fill('input[type=text]', 'worker_%04d' % rng.randint(0, 9999))
     page.check('input[type=checkbox]')
     page.click('text=次へ')
+    pass_prepare(page)
     page.wait_for_selector('text=画面の大きさの調整')
     page.click('text=大きさを合わせた')
     page.wait_for_function("() => /練習を始める|画面の大きさの確認/.test(document.body.innerText)")
@@ -193,11 +206,7 @@ def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
             parts = cur['id'].split('_')
             want = 1 if rng.random() < p_yes(parts[1], int(parts[2]) / 100.0) else 0
         yes_left = left_label.startswith(YES)
-        key = 'f' if (want == 1) == yes_left else 'j'
-        if rng.random() < 0.5:
-            page.keyboard.press(key)
-        else:
-            page.locator('.choice').nth(0 if key == 'f' else 1).click()
+        page.locator('.choice').nth(0 if (want == 1) == yes_left else 1).click()   # 回答はマウスのクリックだけ
         n += 1
         page.wait_for_function("(k) => !window.__SURVEY__.current || window.__SURVEY__.trials.length >= k", arg=n, timeout=30000)
     page.wait_for_selector('text=最後に、あなたご自身について')
@@ -233,6 +242,7 @@ def check_payload(p, n_main, n_blocks, levels, n_att=2):
     assert s['attention_pass'] == 1 and s['attention_correct'] == n_att
     assert s['n_trials_main'] == n_main
     assert [t['trial_index'] for t in tr] == list(range(len(tr)))
+    assert {t['key'] for t in tr} <= {'click_left', 'click_right'}, {t['key'] for t in tr}   # マウスのクリックだけ
     assert all(isinstance(t['rt_ms'], int) and t['rt_ms'] >= 0 for t in tr)
     assert s['completion_code'].startswith(('SMILET-', 'SMILER-'))
     for t in main:
@@ -268,11 +278,18 @@ def main():
             p = gas.payloads[-1]
             s = check_payload(p, 84, 3, levels, n_att=3)
             assert s['images_loaded'] == 1, s['images_loaded']
+            ins = LAST['instructions']
+            assert 'VR空間でアバタ同士で会話している状態を想像してください。画像に表示されるのはあなたの話を聞いている相手のアバタです。' in ins, ins
+            assert '「対話中の聞き手の表情として、この顔は自然だと思いますか。」という質問に、「はい」か「いいえ」でお答えください。' in ins, ins
+            assert '同じ顔が複数回表示されますが、過去の回答にとらわれず、あまり悩まずに感じた印象で率直に回答してください。' in ins, ins
+            assert not any(w in ins + LAST['consent'] for w in ('コンピュータ', 'だれか', '不自然')), ins
+            assert not any(w in ins for w in ('キーボード', 'F キー', 'クリック', '最大化')), ins   # 操作の説明と最大化の注意は説明に出さない
+            assert '最大化してから' in LAST['prepare'] and 'ウィンドウの大きさと画面の拡大・縮小（ズーム）を変えないでください' in LAST['prepare'], LAST['prepare']
             assert '回答は全部で89問' in LAST['instructions'] and '本番を87問お答えいただきます。本番は29問ずつ3回に分かれていて' in LAST['instructions'], LAST['instructions']
             assert len(LAST['breaks']) == 2 and '3回のうち1回目が終わりました' in LAST['breaks'][0] and '3回のうち2回目' in LAST['breaks'][1], LAST['breaks']
-            assert p['session']['experiment_id'] == 'thr3'
-            assert {t['response_label'] for t in p['trials'] if t['phase'] == 'main'} <= {'不自然', '自然'}
-            assert all((t['response'] == 1) == (t['response_label'] == '不自然') for t in p['trials'])
+            assert p['session']['experiment_id'] == 'thr4'
+            assert {t['response_label'] for t in p['trials'] if t['phase'] == 'main'} <= {'いいえ', 'はい'}
+            assert all((t['response'] == 1) == (t['response_label'] == 'いいえ') for t in p['trials'])
             assert sorted({t['combo'] for t in p['trials'] if t['phase'] == 'main'}) == ['eye', 'smile']
             assert [t['stimulus_id'] for t in p['trials'] if t['phase'] == 'practice'] == ['M_eye_040', 'F_smile_040']
             assert s['age'] in AGES and s.get('vr_experience', '') == '', (s['age'], s.get('vr_experience'))
@@ -290,7 +307,7 @@ def main():
         ctx = browser.new_context(viewport={'width': 1366, 'height': 657})
         page = ctx.new_page()
         page.goto(base + 'index.html?config=test&debug&pid=fit01')
-        page.check('input[type=checkbox]'); page.click('text=次へ')
+        page.check('input[type=checkbox]'); page.click('text=次へ'); pass_prepare(page)
         page.click('text=カードが手元にない場合はこちら')
         page.wait_for_function("() => { const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='練習を始める'); return b && !b.disabled; }")
         page.click('text=練習を始める')
@@ -300,9 +317,54 @@ def main():
         assert box['y'] >= 0 and box['y'] + box['height'] <= 657, box
         assert btn['x'] + btn['width'] <= 1366 and btn['y'] + btn['height'] <= 657, btn
         q = page.locator('.question')
-        assert q.inner_text() == '対話中の聞き手の表情として、\nこの顔は自然ですか、\n不自然ですか。', q.inner_text()   # 設定の改行位置で折り返す
-        assert q.bounding_box()['height'] < 100, q.bounding_box()                                        # 3行に収まる
+        assert q.inner_text() == '対話中の聞き手の表情として、\nこの顔は自然だと思いますか。', q.inner_text()   # 設定の改行位置で折り返す
+        assert q.bounding_box()['height'] < 70, q.bounding_box()                                         # 2行に収まる
+        assert [b.inner_text().split('\n')[0] for b in page.locator('.choice').all()] in (['いいえ', 'はい'], ['はい', 'いいえ'])
         results.append('1366×657：顔 %dx%d px（既定の較正で %.0f mm 幅）、ボタンも画面内' % (box['width'], box['height'], box['width'] / (96 / 25.4)))
+        ctx.close()
+
+        # 一問ごとの待ち時間：回答したらすぐ次の顔を出し（空白・注視点なし）、顔を出してから minViewMs はボタンを押せない
+        ctx = browser.new_context(viewport={'width': 1366, 'height': 768})
+        page = ctx.new_page()
+        page.goto(base + 'index.html?config=testlock&debug&pid=lock01')
+        page.check('input[type=checkbox]'); page.click('text=次へ'); pass_prepare(page)
+        page.click('text=カードが手元にない場合はこちら')
+        page.wait_for_function("() => { const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='練習を始める'); return b && !b.disabled; }")
+        page.click('text=練習を始める')
+        page.wait_for_function("() => document.querySelector('.choice') && !document.querySelector('.choice').disabled", timeout=5000)
+        tm = page.evaluate('() => window.SURVEY_CONFIG.timing')
+        assert tm['itiMs'] == 0 and tm['fixationMs'] == 0, tm
+        first = page.evaluate('() => window.__SURVEY__.current.id')
+        assert 'キー' not in page.inner_text('.choices'), page.inner_text('.choices')
+        for k in ('f', 'j', 'Tab', 'Enter', ' '):                     # キーボードでは答えられない
+            page.keyboard.press(k)
+        page.wait_for_timeout(300)
+        assert page.evaluate('() => window.__SURVEY__.current.id') == first and len(page.evaluate('() => window.__SURVEY__.trials')) == 0
+        page.evaluate('''() => {
+            const img = document.querySelector('.imgbox img'), fix = document.querySelector('.imgbox .fix');
+            const b = [...document.querySelectorAll('.choice')], src0 = img.src;
+            const r = window.__lock = {face: null, enabled: null, blank: false, unlocked: false};
+            let t0 = null;
+            b.forEach(x => x.addEventListener('click', () => { if (t0 === null) t0 = performance.now(); }));
+            (function poll() {
+              if (t0 !== null) {
+                const t = performance.now() - t0;
+                if (getComputedStyle(img).display === 'none' || getComputedStyle(fix).display !== 'none') r.blank = true;
+                if (r.face === null && img.src !== src0) { r.face = t; r.unlocked = !b[0].disabled || !b[1].disabled; }
+                if (r.face !== null && !b[0].disabled) { r.enabled = t; return; }
+                if (t > 5000) return;
+              }
+              requestAnimationFrame(poll);
+            })();
+        }''')
+        page.locator('.choice').nth(0).click()
+        page.wait_for_function('() => window.__lock.enabled !== null', timeout=8000)
+        lock = page.evaluate('() => window.__lock')
+        assert page.evaluate('() => window.__SURVEY__.trials[0].key') == 'click_left'
+        assert lock['face'] is not None and lock['face'] < 300 and not lock['blank'], lock          # 次の顔がすぐ出る
+        assert not lock['unlocked'] and lock['enabled'] - lock['face'] >= tm['minViewMs'] - 50, lock   # ボタンは押せない
+        results.append('待ち時間：回答から %d ms で次の顔（空白・注視点なし）、ボタンは顔が出てから %d ms 押せない' % (
+            lock['face'], lock['enabled'] - lock['face']))
         ctx.close()
 
         # ---- 画面の大きさの確認 ----
@@ -311,7 +373,7 @@ def main():
         ctx = browser.new_context(viewport={'width': 1280, 'height': 590}, screen={'width': 1280, 'height': 720})
         page = ctx.new_page()
         page.goto(base + 'index.html?config=test&debug&pid=fit13')
-        page.check('input[type=checkbox]'); page.click('text=次へ')
+        page.check('input[type=checkbox]'); page.click('text=次へ'); pass_prepare(page)
         page.wait_for_selector('text=画面の大きさの調整')
         assert 'ウィンドウが小さいようです' not in page.inner_text('.card')   # 最大化したノートPCでは較正の画面で注意しない
         page.evaluate("() => { const s = document.querySelector('input[type=range]'); s.value = '372'; s.dispatchEvent(new Event('input')); }")
@@ -323,7 +385,7 @@ def main():
         ctx = browser.new_context(viewport={'width': 1100, 'height': 560}, screen={'width': 1366, 'height': 768})
         page = ctx.new_page()
         page.goto(base + 'index.html?config=test&debug&pid=fit02')
-        page.check('input[type=checkbox]'); page.click('text=次へ')
+        page.check('input[type=checkbox]'); page.click('text=次へ'); pass_prepare(page)
         page.wait_for_selector('text=画面の大きさの調整')
         # 14型ノートPC相当の較正（4.42 px/mm、カード幅 378 px）→ 顔 442×552 px は高さ 560 では 90 mm に縮む
         page.evaluate("() => { const s = document.querySelector('input[type=range]'); s.value = '378'; s.dispatchEvent(new Event('input')); }")
@@ -353,8 +415,10 @@ def main():
         n = run_participant(page, base, 'config=testrange&debug&pid=lab01', random.Random(7))
         p = gas.payloads[-1]
         s = check_payload(p, 40, 1, [round(0.1 * i, 1) for i in range(1, 11)], n_att=3)
-        assert p['session']['experiment_id'] == 'range3' and s['completion_code'].startswith('SMILER-')
+        assert p['session']['experiment_id'] == 'range4' and s['completion_code'].startswith('SMILER-')
         assert '回答は全部で45問' in LAST['instructions'] and '本番を43問お答え' in LAST['instructions'], LAST['instructions']
+        assert '画像に表示されるのはあなたの話を聞いている相手のアバタです' in LAST['instructions'] and '「はい」か「いいえ」' in LAST['instructions'], LAST['instructions']
+        assert not any(w in LAST['instructions'] + LAST['consent'] for w in ('コンピュータ', 'だれか', '不自然')), LAST['instructions']
         assert not LAST['breaks']
         results.append('範囲確認: %d 回答（本試行 40・確認問題 3・練習 2）、説明に「全部で45問」' % n)
         ctx.close()

@@ -57,8 +57,7 @@ textarea{width:100%;min-height:90px}
 .panel{width:300px;flex:0 0 300px;display:flex;flex-direction:column;gap:18px}
 .question{font-size:20px;font-weight:600;line-height:1.5;margin:0;white-space:pre-line}
 .choices{display:flex;gap:14px}
-.choice{flex:1;appearance:none;background:#fff;border:2px solid #4a4a47;border-radius:10px;padding:14px 6px 10px;font:inherit;font-size:18px;font-weight:600;line-height:1.3;cursor:pointer;color:var(--ink)}
-.choice small{display:block;font-size:12px;font-weight:400;color:var(--sub);margin-top:4px}
+.choice{flex:1;appearance:none;background:#fff;border:2px solid #4a4a47;border-radius:10px;padding:16px 6px;font:inherit;font-size:18px;font-weight:600;line-height:1.3;cursor:pointer;color:var(--ink)}
 .choice:not([disabled]):hover{background:#f1f4f8}
 .choice[disabled]{opacity:.35;cursor:default}
 .hidden{visibility:hidden}
@@ -69,8 +68,8 @@ textarea{width:100%;min-height:90px}
 <div id="app"><div class="page"><div class="card"><p>読み込み中です…</p><noscript><p class="warn">この調査には JavaScript が必要です。</p></noscript></div></div></div>
 <script>
 /* 違和感の閾値の測定（恒常法）── 回答画面
- * 流れ：環境の確認 → 同意 → 画面較正 →（顔が収まらないウィンドウなら、大きさの確認）
- *       → 説明（画像の読み込み）→ 練習 → 本試行（ブロック間に休憩）
+ * 流れ：環境の確認 → 同意 → 画面の準備（最大化の案内）→ 画面較正 →（顔が収まらないウィンドウなら、大きさの確認）
+ *       → 説明（画像の読み込み）→ 練習 → 本試行（ブロック間に休憩。回答はマウスのクリックだけ）
  *       → 属性 → 送信（Apps Script）→ 完了の画面（完了コードは showCompletionCode で表示／非表示）。
  *       送信できないときは回答を CSV で保存させる。
  * 設定は config.js（?config=<名前> で config.<名前>.js を重ねる）。
@@ -304,8 +303,8 @@ textarea{width:100%;min-height:90px}
     T.attn = h('div', { class: 'attn' });
     T.tag = h('div', { class: 'tag' });
     T.box = h('div', { class: 'imgbox' }, T.img, T.canvas, T.attn, T.fix, T.tag);
-    T.btnL = h('button', { class: 'choice', type: 'button', disabled: true }, L.label, h('small', { text: 'F キー' }));
-    T.btnR = h('button', { class: 'choice', type: 'button', disabled: true }, R.label, h('small', { text: 'J キー' }));
+    T.btnL = h('button', { class: 'choice', type: 'button', tabindex: '-1', disabled: true }, L.label);
+    T.btnR = h('button', { class: 'choice', type: 'button', tabindex: '-1', disabled: true }, R.label);
     T.valL = L; T.valR = R;
     T.root = h('div', { class: 'trial' },
       h('div', { class: 'topbar' }, T.progressText, h('div', { class: 'bar' }, T.barFill)),
@@ -329,23 +328,18 @@ textarea{width:100%;min-height:90px}
     w = Math.floor(w * s); hh = Math.floor(hh * s);
     return { w: w, h: hh, mm: w / S.pxPerMm, shrunk: s < 1 };
   }
+  // 回答はマウスのクリックだけ（2026-11-05 からキーボードは使わない）。ボタンは Tab で選べず（tabindex=-1）、
+  // Enter・スペースで押された click（detail が 0）も受け付けない
   function waitResponse() {
     return new Promise(function (resolve) {
-      function done(val, key) {
+      function done(val, key, e) {
+        if (e && e.detail === 0) return;
         T.btnL.onclick = T.btnR.onclick = null;
-        document.removeEventListener('keydown', onKey);
-        if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // スペースキーでの誤回答を防ぐ
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         resolve({ value: val.value, label: val.label, key: key, t: performance.now() });
       }
-      function onKey(e) {
-        if (e.repeat) return;
-        var k = (e.key || '').toLowerCase();
-        if (k === 'f') { e.preventDefault(); done(T.valL, 'F'); }
-        else if (k === 'j') { e.preventDefault(); done(T.valR, 'J'); }
-      }
-      T.btnL.onclick = function () { done(T.valL, 'click_left'); };
-      T.btnR.onclick = function () { done(T.valR, 'click_right'); };
-      document.addEventListener('keydown', onKey);
+      T.btnL.onclick = function (e) { done(T.valL, 'click_left', e); };
+      T.btnR.onclick = function (e) { done(T.valR, 'click_right', e); };
     });
   }
   function enable(on) { T.btnL.disabled = T.btnR.disabled = !on; }
@@ -358,10 +352,10 @@ textarea{width:100%;min-height:90px}
     T.barFill.style.width = Math.round(meta.frac * 100) + '%';
     size = displaySize();
     T.box.style.width = size.w + 'px'; T.box.style.height = size.h + 'px';
-    setVisible('none');
-    await sleep(tm.itiMs);
-    setVisible('fix');
-    await sleep(tm.fixationMs);
+    // 空白・注視点は 0 なら出さない（回答したらすぐ次の顔を出す）。区切りの最初は前の顔を残さないよう消す
+    if (tm.itiMs > 0 || meta.blockTrial === 1) setVisible('none');
+    if (tm.itiMs > 0) await sleep(tm.itiMs);
+    if (tm.fixationMs > 0) { setVisible('fix'); await sleep(tm.fixationMs); }
     if (t.kind === 'attention') {
       T.attn.textContent = t.text;
       setVisible('attn');
@@ -648,6 +642,7 @@ textarea{width:100%;min-height:90px}
       : (parseInt(fnv1a('order|' + S.pid).charAt(0), 16) < 8 ? 'yes_left' : 'yes_right'); // 参加者IDで左右を振り分け（上位ビットを使う）
     protect(true);
 
+    if (cfg.prepare) await screenMessage(cfg.prepare.heading, cfg.prepare.body, cfg.prepare.button);   // カードで測る前に最大化を頼む
     await screenCalibration();
     await screenFitCheck();
     var sched = buildSchedule();

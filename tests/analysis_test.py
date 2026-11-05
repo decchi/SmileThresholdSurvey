@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, 'analysis'))
 import threshold as th  # noqa: E402
 
 TRUE = {'smile': 0.85, 'eye': 0.75}   # 50%点（今の設計の2通り）
-EXP = 'thr3'
+EXP = 'thr4'
 SLOPE = 14.0
 SHIFT_SD = 0.04                        # 参加者ごとのずれ（正規分布）の標準偏差
 LEVELS = [0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
@@ -26,14 +26,14 @@ REPS = 3
 
 
 def majority_targets(t, slope=SLOPE, sd=SHIFT_SD):
-    """各画像3回の多数決が「不自然」になる確率（参加者のずれで平均）が 50%・25% になる強さ"""
+    """各画像3回の多数決が「いいえ」（回答 1）になる確率（参加者のずれで平均）が 50%・25% になる強さ"""
     import numpy as np
     z = np.linspace(-5, 5, 2001)
     w = np.exp(-z ** 2 / 2)
     w /= w.sum()
     xs = np.linspace(0, 1.2, 12001)
     p = 1 / (1 + np.exp(-slope * (xs[:, None] - t - sd * z[None, :])))
-    m = (3 * p ** 2 - 2 * p ** 3) @ w          # 3回中2回以上「不自然」の確率
+    m = (3 * p ** 2 - 2 * p ** 3) @ w          # 3回中2回以上「いいえ」の確率
     return float(xs[np.argmin(abs(m - 0.5))]), float(xs[np.argmin(abs(m - 0.25))])
 
 
@@ -61,7 +61,7 @@ def participant(i, rng, attention_ok=True, images_ok=True, mode='main', pid=None
             y = 1 if rng.random() < p else 0
             trials.append(dict(phase='main', block=b, avatar=a, combo=c, level=lv,
                                stimulus_id='%s_%s_%03d' % (a[0].upper(), c, round(lv * 100)),
-                               response=y, response_label='不自然' if y else '自然'))
+                               response=y, response_label='いいえ' if y else 'はい'))
         trials.insert(len(trials) - 14, dict(phase='attention', block=b, stimulus_id='att%d' % b,
                                              response=1 if attention_ok else 0, correct=1 if attention_ok else 0))
     for j, t in enumerate(trials):
@@ -122,7 +122,7 @@ def main():
         r = subprocess.run(cmd, capture_output=True, text=True)
         print(r.stdout)
         assert r.returncode == 0, r.stderr
-        assert '「不自然」の割合' in r.stdout and '組み合わせ：口角だけ・＋目' in r.stdout, r.stdout
+        assert '「いいえ」（自然だと思わない）の割合' in r.stdout and '組み合わせ：口角だけ・＋目' in r.stdout, r.stdout
         assert '各画像 3 回の答えを参加者ごとに多数決でまとめ' in r.stdout, r.stdout
 
         import pandas as pd
