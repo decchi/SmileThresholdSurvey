@@ -170,6 +170,7 @@ def run_participant(page, base, query, rng, viewport=None, shot=None, fit=None):
     page.click('text=次へ')
     pass_prepare(page)
     page.wait_for_selector('text=画面の大きさの調整')
+    LAST['calibration'] = page.inner_text('.card')
     page.click('text=大きさを合わせた')
     page.wait_for_function("() => /練習を始める|画面の大きさの確認/.test(document.body.innerText)")
     warned = page.locator('h1:has-text("画面の大きさの確認")').count() > 0
@@ -283,6 +284,9 @@ def main():
             assert '「対話中の聞き手の表情として、この顔は自然だと思いますか。」という質問に、「はい」か「いいえ」でお答えください。' in ins, ins
             assert '同じ顔が複数回表示されますが、過去の回答にとらわれず、あまり悩まずに感じた印象で率直に回答してください。' in ins, ins
             assert not any(w in ins + LAST['consent'] for w in ('コンピュータ', 'だれか', '不自然')), ins
+            assert 'これから、アバタの顔の画像を1枚ずつ表示します。' in ins, ins                        # 画像はアバタの顔と書く
+            assert 'アバタの顔の画像を決まった大きさで表示するため' in LAST['consent'], LAST['consent']
+            assert 'アバタの顔の画像を、どの画面でも同じ大きさで表示する' in LAST['calibration'], LAST['calibration']
             assert not any(w in ins for w in ('キーボード', 'F キー', 'クリック', '最大化')), ins   # 操作の説明と最大化の注意は説明に出さない
             assert '最大化してから' in LAST['prepare'] and 'ウィンドウの大きさと画面の拡大・縮小（ズーム）を変えないでください' in LAST['prepare'], LAST['prepare']
             assert '回答は全部で89問' in LAST['instructions'] and '本番を87問お答えいただきます。本番は29問ずつ3回に分かれていて' in LAST['instructions'], LAST['instructions']
@@ -392,6 +396,7 @@ def main():
         page.click('text=大きさを合わせた')
         page.wait_for_selector('h1:has-text("画面の大きさの確認")')
         assert '13インチ以上' in page.inner_text('.card') and '幅 100 mm' in page.inner_text('.card')
+        assert 'アバタの顔の画像を決まった大きさ（幅 100 mm）で表示できません' in page.inner_text('.card') and 'アバタの顔が少し小さく' in page.inner_text('.card')
         page.click('button:has-text("もう一度確認する")')
         page.wait_for_selector('text=まだ収まりません')
         page.set_viewport_size({'width': 1366, 'height': 768})
@@ -417,6 +422,7 @@ def main():
         s = check_payload(p, 40, 1, [round(0.1 * i, 1) for i in range(1, 11)], n_att=3)
         assert p['session']['experiment_id'] == 'range4' and s['completion_code'].startswith('SMILER-')
         assert '回答は全部で45問' in LAST['instructions'] and '本番を43問お答え' in LAST['instructions'], LAST['instructions']
+        assert 'これから、アバタの顔の画像を1枚ずつ表示します。' in LAST['instructions'] and 'アバタの顔の画像を決まった大きさで' in LAST['consent']
         assert '画像に表示されるのはあなたの話を聞いている相手のアバタです' in LAST['instructions'] and '「はい」か「いいえ」' in LAST['instructions'], LAST['instructions']
         assert not any(w in LAST['instructions'] + LAST['consent'] for w in ('コンピュータ', 'だれか', '不自然')), LAST['instructions']
         assert not LAST['breaks']

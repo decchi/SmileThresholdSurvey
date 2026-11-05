@@ -430,7 +430,7 @@ textarea{width:100%;min-height:90px}
       // 顔が実寸で収まるかは、較正のあとの screenFitCheck で確かめる
       var small = window.innerHeight < 500 || window.innerWidth < 900;
       show(page(h('h1', { text: '画面の大きさの調整' }),
-        h('p', { text: '顔の画像を、どの画面でも同じ大きさで表示するための調整です。' }),
+        h('p', { text: 'アバタの顔の画像を、どの画面でも同じ大きさで表示するための調整です。' }),
         h('p', { text: 'クレジットカードやポイントカードなど、一般的な大きさのカードを画面の四角形に重ね、四角形がカードと同じ大きさになるまでスライダーを動かしてください。' }),
         small ? h('p', { class: 'warn', text: 'ブラウザのウィンドウが小さいようです。ウィンドウを最大化してからお進みください。' }) : null,
         h('div', { class: 'calib' }, shape, slider,
